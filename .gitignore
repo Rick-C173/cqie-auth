@@ -1,0 +1,19 @@
+# ====== 构建产物 ======
+/build/
+/cqie-auth
+*.o
+*.owrt
+*.exe
+
+# ====== 运行期遗留（历史版本把状态文件写在 CWD）======
+*.txt
+userIndex
+nasip
+
+# ====== IDE / 智能体工作目录 ======
+.idea/
+.workbuddy/
+
+# ====== 凭据配置（本地真实值不入库）======
+cqie-auth.conf
+FLOW.md
