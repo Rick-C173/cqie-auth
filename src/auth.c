@@ -672,9 +672,12 @@ int cmd_logout(const char* user_index)
 
     if (ret != 0 && !user_index)
     {
-        LOG_ERROR("没有可用的 userIndex：请先 login，或用 `logout <index>` 指定"
-                  "（服务端要回、拼接回退也失败）");
-        log_status("注销失败: 没有可用的 userIndex");
+        /* 三级来源全部落空通常意味着"本来就没有活跃会话"（如离线状态下
+         * 服务端不会重定向、nasip 无记录），对 reauth 而言注销本就是尽力而为，
+         * 降为 WARN 避免误导（用户容易误读成认证环节的问题）。 */
+        LOG_WARN("没有可用的 userIndex，跳过注销"
+                 "（无存储值、服务端无活跃会话、拼接回退不可用——可能本来就未登录）");
+        log_status("注销跳过: 没有 userIndex（可能本来就未登录）");
         return 1;
     }
     /* 退出码沿用旧语义：服务端明确拒绝（会话可能本来就不存在）算软成功 exit 0；
