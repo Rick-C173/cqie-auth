@@ -902,8 +902,8 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
             sleep 0.1
         done
 
-        # --setup + 管道输入：向导生成配置文件并当场继续登录
-        ( cd "$TMP" && printf 'wizuser\n%s\n%s\n测试运营商\n' "$PWD_TEST" "$PWD_TEST" \
+        # --setup + 管道输入：向导生成配置文件并当场继续登录（运营商留空=自动探测）
+        ( cd "$TMP" && printf 'wizuser\n%s\n%s\n\n' "$PWD_TEST" "$PWD_TEST" \
           | "$TMP/cqie-wizard" login --setup --config "$TMP/wizard.conf" --state-dir "$TMP/state-wizard" ) \
             >"$TMP/wiz.out" 2>"$TMP/wiz.err"
         grep -q "已写入" "$TMP/wiz.out" \
@@ -913,9 +913,9 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
             && ok "向导: 写入后当场登录成功" \
             || bad "向导: 应继续登录成功" "含「认证成功」" "$(cat "$TMP/wiz.out")"
         WJ=$(python3 -c "import json;j=json.load(open('$TMP/w_log.json'))['login'];print(j['userId'],j['service'])")
-        [ "$WJ" = "wizuser 测试运营商" ] \
-            && ok "向导: 登录使用的账号/运营商来自向导输入" \
-            || bad "向导: 账号/运营商不对" "wizuser 测试运营商" "$WJ"
+        [ "$WJ" = "wizuser 中国移动" ] \
+            && ok "向导: 运营商留空时自动取列表第一项" \
+            || bad "向导: 账号/运营商不对" "wizuser 中国移动" "$WJ"
         WP=$(grep -c '^password=test-pass-123$' "$TMP/wizard.conf")
         [ "$WP" = "1" ] \
             && ok "向导: 生成的配置文件密码行正确" \

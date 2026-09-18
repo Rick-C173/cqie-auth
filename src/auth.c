@@ -277,7 +277,11 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
     {
         const char* e = strchr(p, '@');
         size_t len = e ? (size_t)(e - p) : strlen(p);
-        if (len && strlen(name) == len && strncmp(p, name, len) == 0)
+        /*
+         * 未配置运营商名（配置留空）时取列表第一项——等价浏览器登录页
+         * 默认选中第一个 <option> 的行为。否则按名字精确匹配。
+         */
+        if (len && (!name[0] || (strlen(name) == len && strncmp(p, name, len) == 0)))
         {
             size_t c = len < outsz - 1 ? len : outsz - 1;
             memcpy(out, p, c);
