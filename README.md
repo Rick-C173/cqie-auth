@@ -42,6 +42,8 @@ service=中国移动
 
 `service` 可以留空，工具会通过运营商接口自动探测。
 
+示例配置见仓库中的 [cqie-auth.conf.example](cqie-auth.conf.example)。
+
 ```sh
 # 3. 认证上线
 cqie-auth login
@@ -73,6 +75,8 @@ cqie-auth userindex [hex]     解码显示 userIndex
 | 选项 | 说明 |
 | --- | --- |
 | `--config FILE` | 凭据配置文件（默认 `/etc/cqie-auth.conf`，可用 `$CQIE_CONFIG` 覆盖） |
+| `-u, --user` / `-p, --pass` | 临时指定账号/密码（`ps` 可见，仅调试用） |
+| `--service NAME` | 临时覆盖运营商名 |
 | `--portal URL` | 覆盖 eportal 地址（换学校/换 AC 不用重新编译） |
 | `--interface IP` | 绑定认证流量的源 IP（多网卡/多 WAN） |
 | `--force` | 跳过“已在线”短路，强制走一次完整认证 |
@@ -80,6 +84,8 @@ cqie-auth userindex [hex]     解码显示 userIndex
 | `--no-syslog` | 本次运行不写 syslog 审计行 |
 | `-v/-vv/-vvv` | 调试输出：流程 / HTTP 细节 / 响应全文 |
 | `--dry-run` | 只探测+取公钥+加密，不提交登录 |
+
+凭据来源优先级：**命令行 `-u/-p/--service` > 环境变量 `CQIE_USER`/`CQIE_PASS`/`CQIE_SERVICE` > 配置文件 > 编译期默认**。
 
 ## 从源码编译
 
@@ -91,7 +97,8 @@ make check      # 端到端自检（需 python3 + cryptography，开发机用）
 ```
 
 编译期可用 `-D` 覆盖一切默认值（`USER_ID` / `PASSWORD` / `PORTAL_URL` 等），
-但发布版凭据默认为空，推荐用配置文件。完整编译说明见 [BUILD.md](BUILD.md)。
+但发布版凭据默认为空，推荐用配置文件。全部编译期选项见
+[include/config.h](include/config.h) 内注释（均 `#ifndef` 包裹，支持 `-D` 覆盖）。
 
 ## 调试
 
@@ -118,8 +125,6 @@ logread | grep cqie-auth                  # OpenWrt 查看历史认证结果
                           ▼
         RSA(password>mac) ──> POST login ──> userIndex 落盘
 ```
-
-完整协议文档见 [BUILD.md](BUILD.md)（含编译期全部选项与构建细节）。
 
 ## License
 

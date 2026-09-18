@@ -522,7 +522,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$RPORT))==0 else 1)" && break
 
         mkdir -p "$TMP/state-reauth"
         printf 'STOREDOLDHEX' > "$TMP/state-reauth/userIndex"  # 干扰值：应改用指定值
-        IDX_SPEC=$(python3 -c "print('10.0.0.1_127.0.0.1_REDACTED-USERID'.encode().hex())")
+        IDX_SPEC=$(python3 -c "print('10.0.0.1_127.0.0.1_testuser'.encode().hex())")
 
         ( cd "$TMP" && "$TMP/cqie-reauth" reauth "$IDX_SPEC" --state-dir "$TMP/state-reauth" ) \
             >"$TMP/reauth.out" 2>"$TMP/reauth.err"

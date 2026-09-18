@@ -14,6 +14,10 @@ nasip
 .idea/
 .workbuddy/
 
-# ====== 凭据配置（本地真实值不入库）======
+# ====== 本地私有文档与凭据（不入库；示例见 cqie-auth.conf.example）======
 cqie-auth.conf
 FLOW.md
+BUILD.md
+
+# ====== 部署脚本（本地私有，含服务器地址）======
+deploy.sh

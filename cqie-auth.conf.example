@@ -1,0 +1,15 @@
+# cqie-auth 凭据配置示例
+# 复制为 /etc/cqie-auth.conf（OpenWrt/Linux）或 cqie-auth.conf（Windows）后填写，
+# 并收紧权限：chmod 600 /etc/cqie-auth.conf
+#
+# 也可用环境变量 CQIE_USER / CQIE_PASS / CQIE_SERVICE，
+# 或命令行 -u / -p / --service 临时覆盖（优先级：命令行 > 环境变量 > 本文件）。
+
+# 学号/账号
+user=20250001
+
+# 认证密码
+password=your-password
+
+# 运营商名（须与认证页运营商列表中的名称一致；留空则自动探测）
+service=
