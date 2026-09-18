@@ -875,6 +875,57 @@ EOF
     fi
 fi
 
+# --------------------------------------------------- 3.14 首次运行配置向导
+echo
+echo "== 3.14 --setup 首次运行向导（交互生成配置文件） =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    WPORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/w_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$WPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$WPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-wizard"
+#define USER_ID         ""
+#define PASSWORD        ""
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/w_override.h" \
+            -o "$TMP/cqie-wizard" "$ROOT"/src/*.c 2>"$TMP/wizard_cc.err"; then
+        python3 "$ROOT/tests/mock_ac.py" "$WPORT" "$PWD_TEST" "$TMP/w_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        W_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
+            sleep 0.1
+        done
+
+        # --setup + 管道输入：向导生成配置文件并当场继续登录
+        ( cd "$TMP" && printf 'wizuser\n%s\n%s\n测试运营商\n' "$PWD_TEST" "$PWD_TEST" \
+          | "$TMP/cqie-wizard" login --setup --config "$TMP/wizard.conf" --state-dir "$TMP/state-wizard" ) \
+            >"$TMP/wiz.out" 2>"$TMP/wiz.err"
+        grep -q "已写入" "$TMP/wiz.out" \
+            && ok "向导: 配置文件已生成" \
+            || bad "向导: 应写入配置文件" "含「已写入」" "$(cat "$TMP/wiz.out")"
+        grep -q "认证成功" "$TMP/wiz.out" \
+            && ok "向导: 写入后当场登录成功" \
+            || bad "向导: 应继续登录成功" "含「认证成功」" "$(cat "$TMP/wiz.out")"
+        WJ=$(python3 -c "import json;j=json.load(open('$TMP/w_log.json'))['login'];print(j['userId'],j['service'])")
+        [ "$WJ" = "wizuser 测试运营商" ] \
+            && ok "向导: 登录使用的账号/运营商来自向导输入" \
+            || bad "向导: 账号/运营商不对" "wizuser 测试运营商" "$WJ"
+        WP=$(grep -c '^password=test-pass-123$' "$TMP/wizard.conf")
+        [ "$WP" = "1" ] \
+            && ok "向导: 生成的配置文件密码行正确" \
+            || bad "向导: 配置文件密码行不对" "password=test-pass-123" "$(grep '^password' "$TMP/wizard.conf" 2>/dev/null)"
+        kill $W_MOCK 2>/dev/null
+    else
+        bad "向导: 编译失败" "编译通过" "$(head -3 "$TMP/wizard_cc.err")"
+    fi
+fi
+
 echo
 echo "==================== 结果：通过 $PASS 项，失败 $FAIL 项 ===================="
 [ "$FAIL" -eq 0 ]

@@ -89,4 +89,12 @@ int compat_mkdir(const char* path);
  */
 void compat_console_utf8(void);
 
+/*
+ * 终端交互辅助（首次运行向导用）。
+ * compat_stdin_is_tty：stdin 是否为终端——cron/管道下为 0，向导不应触发。
+ * compat_echo：开关终端回显（密码输入）；非终端或失败时静默无害。
+ */
+int compat_stdin_is_tty(void);
+void compat_echo(int on);
+
 #endif /* COMPAT_H */

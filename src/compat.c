@@ -9,7 +9,9 @@
 
 #ifdef _WIN32
 
-#include <direct.h> /* _mkdir */
+#include <direct.h>  /* _mkdir */
+#include <io.h>      /* _isatty */
+#include <stdio.h>   /* stdin/_fileno */
 
 int sock_init(void)
 {
@@ -63,11 +65,36 @@ void compat_console_utf8(void)
     SetConsoleCP(CP_UTF8);
 }
 
+int compat_stdin_is_tty(void) { return _isatty(_fileno(stdin)); }
+
+void compat_echo(int on)
+{
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode;
+    if (!GetConsoleMode(h, &mode)) return; /* 输入被重定向时无控制台，静默 */
+    if (on) mode |= ENABLE_ECHO_INPUT;
+    else    mode &= ~ENABLE_ECHO_INPUT;
+    SetConsoleMode(h, mode);
+}
+
 #else /* POSIX */
 
 #include <stdio.h>
 #include <sys/stat.h> /* mkdir */
 #include <time.h>
+#include <unistd.h>   /* isatty */
+#include <termios.h>  /* 密码输入关回显 */
+
+int compat_stdin_is_tty(void) { return isatty(0); }
+
+void compat_echo(int on)
+{
+    struct termios t;
+    if (tcgetattr(0, &t) != 0) return; /* 输入被重定向时非终端，静默 */
+    if (on) t.c_lflag |= ECHO;
+    else    t.c_lflag &= ~(tcflag_t)ECHO;
+    tcsetattr(0, TCSANOW, &t);
+}
 
 int sock_take_error(sock_t fd)
 {

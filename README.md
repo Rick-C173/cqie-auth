@@ -28,11 +28,15 @@
 # 1. 部署（开发机上）
 ./deploy.sh root@192.168.1.1
 
-# 2. 在路由器上填写凭据配置
-vi /etc/cqie-auth.conf
+# 2. 在路由器上运行 login——首次会进入交互式向导
+cqie-auth login
 ```
 
-`/etc/cqie-auth.conf`（key=value，`#` 注释，建议权限 600）：
+向导会依次询问用户名、密码（不回显、输两遍）、运营商名（直接回车=自动探测），
+写入 `/etc/cqie-auth.conf`（权限 600）后**当场继续认证**。
+
+也可以手动编辑配置文件（示例见 [cqie-auth.conf.example](cqie-auth.conf.example)），
+key=value 格式、`#` 注释、建议权限 600：
 
 ```
 user=20250001
@@ -75,6 +79,7 @@ cqie-auth userindex [hex]     解码显示 userIndex
 | 选项 | 说明 |
 | --- | --- |
 | `--config FILE` | 凭据配置文件（默认 `/etc/cqie-auth.conf`，可用 `$CQIE_CONFIG` 覆盖） |
+| `--setup` | 显式运行首次配置向导（凭据缺失且在终端上运行 login 时也会自动触发） |
 | `-u, --user` / `-p, --pass` | 临时指定账号/密码（`ps` 可见，仅调试用） |
 | `--service NAME` | 临时覆盖运营商名 |
 | `--portal URL` | 覆盖 eportal 地址（换学校/换 AC 不用重新编译） |

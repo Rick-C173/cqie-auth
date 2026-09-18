@@ -50,6 +50,7 @@ static void usage(FILE* out, const char* argv0)
             "        --portal URL   覆盖 portal 地址\n"
             "        --interface IP 绑定认证流量源 IP\n"
             "        --config FILE  凭据配置文件\n"
+            "        --setup        首次运行配置向导\n"
             "        --service NAME 覆盖运营商名\n"
             "        -u/-p USER/PWD 临时凭据（ps 可见，仅调试用）\n"
             "        --state-dir D  状态目录\n"
@@ -84,6 +85,7 @@ static void usage(FILE* out, const char* argv0)
             "        --portal URL   覆盖 portal 地址（AC 换 IP 时不用重新编译）\n"
             "        --interface IP 绑定认证流量的源 IP（多网卡/多 WAN 时指定出口）\n"
             "        --config FILE  凭据配置文件（user/password/service 三行）\n"
+            "        --setup        首次运行向导：交互生成凭据配置文件\n"
             "        -u, --user U   临时指定账号（ps 可见，仅调试用）\n"
             "        -p, --pass P   临时指定密码（ps 可见，仅调试用）\n"
             "        --service NAME 覆盖运营商名（配置/探测结果之上的临时值）\n"
@@ -125,6 +127,90 @@ static void usage(FILE* out, const char* argv0)
             ,
             CQIE_VERSION, argv0, STATE_DIR, argv0, CONFIG_FILE);
 #endif
+}
+
+/* ---- 首次运行向导 ---- */
+
+/* 读一行并去换行；echo_off=1 时关闭回显（密码输入） */
+static void read_line(char* buf, size_t sz, int echo_off)
+{
+    if (echo_off) compat_echo(0);
+    if (!fgets(buf, (int)sz, stdin))
+        buf[0] = 0;
+    else
+    {
+        size_t n = strlen(buf);
+        while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
+    }
+    if (echo_off)
+    {
+        compat_echo(1);
+        printf("\n"); /* 回显关闭时换行不会显示，补一个 */
+    }
+}
+
+/*
+ * 首次设置向导：提问 -> 写配置文件（0600）。
+ * user/pass/svc 传入已有值（可来自 -u 等），只对空字段提问。
+ * 文件已存在时确认后才覆盖。返回 1=已写入，0=取消或写失败。
+ */
+static int setup_wizard(const char* path, char* user, size_t usz,
+                        char* pass, size_t psz, char* svc, size_t ssz)
+{
+    printf("首次设置：生成凭据配置文件 %s\n", path);
+
+    while (!user[0])
+    {
+        printf("用户名: ");
+        fflush(stdout);
+        read_line(user, usz, 0);
+    }
+
+    for (;;)
+    {
+        char pass2[256] = "";
+        printf("密码 (不回显): ");
+        fflush(stdout);
+        read_line(pass, psz, 1);
+        printf("再输一遍: ");
+        fflush(stdout);
+        read_line(pass2, sizeof pass2, 1);
+        if (pass[0] && strcmp(pass, pass2) == 0) break;
+        printf("两次输入不一致或为空，请重新输入。\n");
+    }
+
+    printf("运营商名 (直接回车=自动探测): ");
+    fflush(stdout);
+    read_line(svc, ssz, 0);
+
+    FILE* probe = fopen(path, "r");
+    if (probe)
+    {
+        fclose(probe);
+        printf("配置文件已存在，覆盖? (y/N): ");
+        fflush(stdout);
+        char ans[16] = "";
+        read_line(ans, sizeof ans, 0);
+        if (ans[0] != 'y' && ans[0] != 'Y')
+        {
+            printf("已取消，未写入。\n");
+            return 0;
+        }
+    }
+
+    FILE* f = fopen(path, "w");
+    if (!f)
+    {
+        fprintf(stderr, "无法写入 %s（权限不足？可用 --config 指定其它路径）\n", path);
+        return 0;
+    }
+    fprintf(f, "user=%s\npassword=%s\nservice=%s\n", user, pass, svc);
+    fclose(f);
+#ifndef _WIN32
+    chmod(path, 0600); /* 凭据文件只允许属主读写 */
+#endif
+    printf("已写入 %s (权限 600)\n", path);
+    return 1;
 }
 
 /* 取 --opt value / --opt=value 的值，没有则返回 NULL */
@@ -195,6 +281,7 @@ int main(int argc, char** argv)
     const char *log_file = NULL, *state_opt = NULL, *portal_opt = NULL, *iface = NULL;
     const char *cfg_opt = NULL;
     const char *cli_user = NULL, *cli_pass = NULL, *cli_svc = NULL;
+    int setup = 0;
     int verbose = 0, quiet = 0, dry_run = 0, force = 0, plain = 0, no_syslog = 0;
 
     for (int i = 1; i < argc; i++)
@@ -287,6 +374,11 @@ int main(int argc, char** argv)
             cli_svc = v;
             continue;
         }
+        if (!strcmp(a, "--setup"))
+        {
+            setup = 1;
+            continue;
+        }
         if (a[0] == '-' && a[1])
         {
             fprintf(stderr, "未知选项: %s\n\n", a);
@@ -346,17 +438,18 @@ int main(int argc, char** argv)
     log_set_syslog(!no_syslog); /* --no-syslog：本次运行不写 syslog 状态行 */
 
     /* 凭据配置文件：--config > $CQIE_CONFIG > 编译期默认（可选文件，缺席不报错） */
+    const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
+    if (!cfg_path) cfg_path = CONFIG_FILE;
     {
         char cfg_user[128] = "", cfg_pass[256] = "", cfg_svc[128] = "";
-        const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
-        if (!cfg_path) cfg_path = CONFIG_FILE;
+        /* --setup 时允许文件不存在——向导就是要创建它 */
         if (load_config_file(cfg_path, cfg_user, sizeof cfg_user,
                              cfg_pass, sizeof cfg_pass, cfg_svc, sizeof cfg_svc))
         {
             LOG_DEBUG("凭据配置: %s", cfg_path);
         }
-        else if (explicit_cfg)
+        else if (explicit_cfg && !setup)
         {
             fprintf(stderr, "配置文件不存在或不可读: %s\n\n", cfg_path);
             usage(stderr, argv[0]);
@@ -367,6 +460,24 @@ int main(int argc, char** argv)
         auth_set_credentials(getenv("CQIE_USER"), getenv("CQIE_PASS"),
                              getenv("CQIE_SERVICE"));
         auth_set_credentials(cli_user, cli_pass, cli_svc);
+    }
+
+    /* 首次运行向导：凭据缺失 + 交互终端（或显式 --setup）时引导生成配置文件。
+     * cron/管道等非终端环境不触发，保持"报错引导"的原有行为。 */
+    if (auth_user()[0] == 0 || auth_password()[0] == 0)
+    {
+        int want = setup ||
+                   (compat_stdin_is_tty() &&
+                    (!strcmp(cmd, "login") || !strcmp(cmd, "reauth")));
+        if (want)
+        {
+            char wu[128] = "", wp[256] = "", ws[128] = "";
+            /* 已有的部分值（如 -u 给了账号）作为默认带入，只补缺失项 */
+            snprintf(wu, sizeof wu, "%s", auth_user());
+            snprintf(wp, sizeof wp, "%s", auth_password());
+            if (setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws))
+                auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
+        }
     }
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");
