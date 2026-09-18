@@ -50,6 +50,8 @@ static void usage(FILE* out, const char* argv0)
             "        --portal URL   覆盖 portal 地址\n"
             "        --interface IP 绑定认证流量源 IP\n"
             "        --config FILE  凭据配置文件\n"
+            "        --service NAME 覆盖运营商名\n"
+            "        -u/-p USER/PWD 临时凭据（ps 可见，仅调试用）\n"
             "        --state-dir D  状态目录\n"
             "        --no-syslog    不写 syslog 状态行\n"
             "    -h, --help         帮助\n"
@@ -82,6 +84,9 @@ static void usage(FILE* out, const char* argv0)
             "        --portal URL   覆盖 portal 地址（AC 换 IP 时不用重新编译）\n"
             "        --interface IP 绑定认证流量的源 IP（多网卡/多 WAN 时指定出口）\n"
             "        --config FILE  凭据配置文件（user/password/service 三行）\n"
+            "        -u, --user U   临时指定账号（ps 可见，仅调试用）\n"
+            "        -p, --pass P   临时指定密码（ps 可见，仅调试用）\n"
+            "        --service NAME 覆盖运营商名（配置/探测结果之上的临时值）\n"
             "        --state-dir D  状态目录，默认 $CQIE_STATE_DIR 或 %s\n"
             "        --no-syslog    本次运行不写 syslog（logread 不留痕）\n"
             "    -h, --help         显示本帮助\n"
@@ -105,7 +110,9 @@ static void usage(FILE* out, const char* argv0)
             "        user=学号\n"
             "        password=密码\n"
             "        service=运营商名      # 可留空，自动探测\n"
-            "    建议权限 600。service 留空时自动探测运营商。"
+            "    建议权限 600。service 留空时自动探测运营商。\n"
+            "    优先级：-u/-p/--service > 环境变量（CQIE_USER/CQIE_PASS/CQIE_SERVICE）\n"
+            "    > 配置文件 > 编译期默认。"
 #if USE_SYSLOG
             "\n"
             "系统日志:\n"
@@ -187,6 +194,7 @@ int main(int argc, char** argv)
     const char *cmd = NULL, *arg = NULL;
     const char *log_file = NULL, *state_opt = NULL, *portal_opt = NULL, *iface = NULL;
     const char *cfg_opt = NULL;
+    const char *cli_user = NULL, *cli_pass = NULL, *cli_svc = NULL;
     int verbose = 0, quiet = 0, dry_run = 0, force = 0, plain = 0, no_syslog = 0;
 
     for (int i = 1; i < argc; i++)
@@ -262,6 +270,21 @@ int main(int argc, char** argv)
         if ((v = opt_val(argc, argv, &i, "--config")))
         {
             cfg_opt = v;
+            continue;
+        }
+        if ((v = opt_val(argc, argv, &i, "-u")) || (v = opt_val(argc, argv, &i, "--user")))
+        {
+            cli_user = v;
+            continue;
+        }
+        if ((v = opt_val(argc, argv, &i, "-p")) || (v = opt_val(argc, argv, &i, "--password")))
+        {
+            cli_pass = v;
+            continue;
+        }
+        if ((v = opt_val(argc, argv, &i, "--service")))
+        {
+            cli_svc = v;
             continue;
         }
         if (a[0] == '-' && a[1])
@@ -340,6 +363,10 @@ int main(int argc, char** argv)
             return 2;
         }
         auth_set_credentials(cfg_user, cfg_pass, cfg_svc);
+        /* 分层覆盖：配置文件 < 环境变量 < 命令行（setter 非空即覆盖，低→高依次调用） */
+        auth_set_credentials(getenv("CQIE_USER"), getenv("CQIE_PASS"),
+                             getenv("CQIE_SERVICE"));
+        auth_set_credentials(cli_user, cli_pass, cli_svc);
     }
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");

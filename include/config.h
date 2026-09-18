@@ -9,11 +9,14 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define CQIE_VERSION  "1.0.0"
+#define CQIE_VERSION  "1.1.0"
 
 /* ====== 认证信息 ======
  * 发布版凭据默认为空：运行时从配置文件读取（见 CONFIG_FILE，
  * key=value 三行：user= / password= / service=，# 注释）。
+ * 也可用环境变量 CQIE_USER / CQIE_PASS / CQIE_SERVICE，或命令行
+ * -u / -p / --service 临时覆盖。
+ * 优先级：命令行 > 环境变量 > 配置文件 > 编译期默认。
  * 单文件党可用编译期注入（注意不要把带值的命令写进公开文档）：
  *   make CFLAGS='-DUSER_ID="xxx" -DPASSWORD="xxx" -DSERVICE_NAME="xxx"'
  * 优先级：配置文件 > 编译期默认。service 留空则自动探测（getServices）。 */

@@ -805,6 +805,76 @@ EOF
     fi
 fi
 
+# --------------------------------------------------- 3.13 凭据通道与优先级
+echo
+echo "== 3.13 -u/-p/--service 与环境变量（凭据多通道） =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    MPORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/m_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$MPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$MPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-multi"
+#define USER_ID         ""
+#define PASSWORD        ""
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/m_override.h" \
+            -o "$TMP/cqie-multi" "$ROOT"/src/*.c 2>"$TMP/multi_cc.err"; then
+        python3 "$ROOT/tests/mock_ac.py" "$MPORT" "$PWD_TEST" "$TMP/m_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        M_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$MPORT))==0 else 1)" && break
+            sleep 0.1
+        done
+
+        # 场景 A：命令行 -u/-p -> 登录成功且账号来自 CLI
+        ( cd "$TMP" && "$TMP/cqie-multi" login -u cliuser -p "$PWD_TEST" --state-dir "$TMP/state-multi" ) \
+            >"$TMP/multi_a.out" 2>"$TMP/multi_a.err"
+        grep -q "认证成功" "$TMP/multi_a.out" \
+            && ok "凭据通道 A: -u/-p 登录成功" \
+            || bad "凭据通道 A: 应登录成功" "含「认证成功」" "$(cat "$TMP/multi_a.out")"
+        MA=$(python3 -c "import json;print(json.load(open('$TMP/m_log.json'))['login']['userId'])")
+        [ "$MA" = "cliuser" ] \
+            && ok "凭据通道 A: 服务端收到 CLI 的账号 cliuser" \
+            || bad "凭据通道 A: 账号不对" "cliuser" "$MA"
+
+        # 场景 B：环境变量 CQIE_USER/CQIE_PASS -> 登录成功且账号来自 env
+        ( cd "$TMP" && CQIE_USER=envuser CQIE_PASS="$PWD_TEST" \
+          "$TMP/cqie-multi" login --state-dir "$TMP/state-multi" ) \
+            >"$TMP/multi_b.out" 2>"$TMP/multi_b.err"
+        grep -q "认证成功" "$TMP/multi_b.out" \
+            && ok "凭据通道 B: 环境变量登录成功" \
+            || bad "凭据通道 B: 应登录成功" "含「认证成功」" "$(cat "$TMP/multi_b.out")"
+        MB=$(python3 -c "import json;print(json.load(open('$TMP/m_log.json'))['login']['userId'])")
+        [ "$MB" = "envuser" ] \
+            && ok "凭据通道 B: 服务端收到环境变量的账号 envuser" \
+            || bad "凭据通道 B: 账号不对" "envuser" "$MB"
+
+        # 场景 C：优先级 CLI > 配置文件（配置给 cfguser，命令行给 cliuser2）
+        cat > "$TMP/multi.conf" <<EOF
+user=cfguser
+password=$PWD_TEST
+EOF
+        ( cd "$TMP" && "$TMP/cqie-multi" login -u cliuser2 --config "$TMP/multi.conf" --state-dir "$TMP/state-multi" ) \
+            >"$TMP/multi_c.out" 2>"$TMP/multi_c.err"
+        grep -q "认证成功" "$TMP/multi_c.out" \
+            && ok "凭据通道 C: CLI + 配置文件同时存在时登录成功" \
+            || bad "凭据通道 C: 应登录成功" "含「认证成功」" "$(cat "$TMP/multi_c.out")"
+        MC=$(python3 -c "import json;print(json.load(open('$TMP/m_log.json'))['login']['userId'])")
+        [ "$MC" = "cliuser2" ] \
+            && ok "凭据通道 C: CLI 覆盖配置文件（收到 cliuser2）" \
+            || bad "凭据通道 C: 账号不对" "cliuser2" "$MC"
+        kill $M_MOCK 2>/dev/null
+    else
+        bad "凭据通道: 编译失败" "编译通过" "$(head -3 "$TMP/multi_cc.err")"
+    fi
+fi
+
 echo
 echo "==================== 结果：通过 $PASS 项，失败 $FAIL 项 ===================="
 [ "$FAIL" -eq 0 ]
