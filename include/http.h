@@ -57,12 +57,4 @@ const char* http_source_ip(void);
  */
 int http_host_reachable(const char* host, int port, long timeout_ms);
 
-/*
- * 后端初始化 / 释放。自实现 HTTP 客户端无需初始化，均为空操作。
- * 进程内各调用一次：http_global_init() 放在所有请求之前，
- * http_cleanup() 放在退出之前。http_global_init 返回 0 表示初始化失败。
- */
-int http_global_init(void);
-void http_cleanup(void);
-
 #endif /* HTTP_H */
