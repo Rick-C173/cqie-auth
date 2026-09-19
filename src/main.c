@@ -250,10 +250,12 @@ static void make_parent_dirs(const char* path)
 /*
  * 首次设置向导：提问 -> 写配置文件（0600）。
  * user/pass/svc 传入已有值（可来自 -u 等），只对空字段提问。
+ * cur_portal 为现有配置的 portal=（非空则原样保留写入）。
  * 文件已存在时确认后才覆盖。返回 1=已写入，0=取消/EOF/写失败。
  */
 static int setup_wizard(const char* path, char* user, size_t usz,
-                        char* pass, size_t psz, char* svc, size_t ssz)
+                        char* pass, size_t psz, char* svc, size_t ssz,
+                        const char* cur_portal)
 {
     printf("首次设置：生成凭据配置文件 %s\n", path);
 
@@ -317,8 +319,10 @@ static int setup_wizard(const char* path, char* user, size_t usz,
     }
     fprintf(f,
             "# cqie-auth 凭据配置（key=value，# 注释；示例见 cqie-auth.conf.example）\n"
-            "# service 留空 = 自动探测运营商；建议本文件权限 600\n"
-            "user=%s\npassword=%s\nservice=%s\n", user, pass, svc);
+            "# service 留空 = 自动探测运营商；建议本文件权限 600\n");
+    if (cur_portal && cur_portal[0])
+        fprintf(f, "portal=%s\n", cur_portal);
+    fprintf(f, "user=%s\npassword=%s\nservice=%s\n", user, pass, svc);
     fclose(f);
 #ifndef _WIN32
     chmod(path, 0600); /* 凭据文件只允许属主读写 */
@@ -349,7 +353,8 @@ static const char* opt_val(int argc, char** argv, int* i, const char* name)
 static int load_config_file(const char* path,
                             char* user, size_t usz,
                             char* pass, size_t psz,
-                            char* svc, size_t ssz)
+                            char* svc, size_t ssz,
+                            char* portal_buf, size_t plsz)
 {
     FILE* fp = fopen(path, "r");
     if (!fp) return 0;
@@ -383,6 +388,7 @@ static int load_config_file(const char* path,
         if (!strcmp(k, "user")) snprintf(user, usz, "%s", v);
         else if (!strcmp(k, "password")) snprintf(pass, psz, "%s", v);
         else if (!strcmp(k, "service")) snprintf(svc, ssz, "%s", v);
+        else if (!strcmp(k, "portal")) snprintf(portal_buf, plsz, "%s", v);
         /* 其余键忽略：允许用户加自定义备注行 */
     }
     fclose(fp);
@@ -519,9 +525,10 @@ int main(int argc, char** argv)
              * 现有配置值作为预填默认，完成后提示运行 login。 */
             const char* p = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
             if (!p) p = CONFIG_FILE;
-            char wu[128] = "", wp[256] = "", ws[128] = "";
-            load_config_file(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws);
-            if (setup_wizard(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws))
+            char wu[128] = "", wp[256] = "", ws[128] = "", wportal[256] = "";
+            load_config_file(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws,
+                             wportal, sizeof wportal);
+            if (setup_wizard(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws, wportal))
             {
                 printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
                 return 0;
@@ -572,12 +579,14 @@ int main(int argc, char** argv)
     const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
     if (!cfg_path) cfg_path = CONFIG_FILE;
     char cfg_svc_raw[128] = ""; /* 配置文件里的原始 service 值（写回自愈的基准） */
+    char cfg_portal[256] = "";  /* 配置文件里的 portal=（可选，覆盖编译期默认） */
     {
         char cfg_user[128] = "", cfg_pass[256] = "", cfg_svc[128] = "";
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
         /* --setup 时允许文件不存在——向导就是要创建它 */
         if (load_config_file(cfg_path, cfg_user, sizeof cfg_user,
-                             cfg_pass, sizeof cfg_pass, cfg_svc, sizeof cfg_svc))
+                             cfg_pass, sizeof cfg_pass, cfg_svc, sizeof cfg_svc,
+                             cfg_portal, sizeof cfg_portal))
         {
             LOG_DEBUG("凭据配置: %s", cfg_path);
         }
@@ -608,7 +617,8 @@ int main(int argc, char** argv)
         /* 已有的部分值（如 -u 给了账号）作为默认带入，只补缺失项 */
         snprintf(wu, sizeof wu, "%s", auth_user());
         snprintf(wp, sizeof wp, "%s", auth_password());
-        wiz_ok = setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws);
+        wiz_ok = setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws,
+                              cfg_portal);
         if (wiz_ok) auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
     }
     /* 向导中止（EOF/取消/写失败）且凭据仍缺失：直接退出，不再跑命令产生二次报错 */
@@ -622,7 +632,8 @@ int main(int argc, char** argv)
               log_file ? "，同时写入日志文件" : "");
 
     state_init(state_opt);
-    auth_set_portal(portal_opt);
+    /* portal 优先级：--portal > 配置文件 portal= > 编译期默认 */
+    auth_set_portal(portal_opt ? portal_opt : (cfg_portal[0] ? cfg_portal : NULL));
     auth_set_dry_run(dry_run);
     auth_set_plain(plain);
     if (iface && http_set_source_ip(iface) != 0)

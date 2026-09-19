@@ -71,7 +71,15 @@ password=your-password
 service=中国移动
 ```
 
-`service` 可以留空，工具会通过运营商接口自动探测。
+`service` 可以留空，工具会通过运营商接口自动探测，探测成功后自动写回本文件；
+配置的运营商若不在探测列表内，会自动回退列表第一项并修正配置。
+
+可选 `portal=` 键覆盖认证服务器地址（优先级：`--portal` > `portal=` > 编译期默认），
+用于学校更换认证服务器时自行调整：
+
+```
+portal=http://10.253.3.84/eportal
+```
 
 示例配置见仓库中的 [cqie-auth.conf.example](cqie-auth.conf.example)。
 

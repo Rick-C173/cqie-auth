@@ -1102,6 +1102,28 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
         grep -q '^service=$' "$TMP/af3.conf" \
             && ok "自愈 C: 显式 --service 为临时意图，不写回" \
             || bad "自愈 C: 不应写回" "service= 保持为空" "$(grep '^service' "$TMP/af3.conf" 2>/dev/null)"
+
+        # 场景 D：配置 portal= 覆盖编译期默认（编译期 PORTAL_URL 指向不可达端口）
+        printf 'user=testuser\npassword=%s\nservice=中国移动\nportal=http://127.0.0.1:%s/eportal\n' \
+            "$PWD_TEST" "$APORT" > "$TMP/af4.conf"
+        cat > "$TMP/a6b_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:1/eportal"
+#define PROBE_URL       "http://127.0.0.1:$APORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-autofix"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/a6b_override.h" \
+                -o "$TMP/cqie-a6b" "$ROOT"/src/*.c 2>"$TMP/a6b_cc.err"; then
+            ( cd "$TMP" && "$TMP/cqie-a6b" login --config "$TMP/af4.conf" --state-dir "$TMP/state-autofix" ) \
+                >"$TMP/af_d.out" 2>"$TMP/af_d.err"
+            grep -q "认证成功" "$TMP/af_d.out" \
+                && ok "自愈 D: 配置 portal= 生效（编译期默认不可达仍认证成功）" \
+                || bad "自愈 D: 配置 portal 应生效" "含「认证成功」" "$(cat "$TMP/af_d.err" "$TMP/af_d.out")"
+        else
+            bad "自愈 D: 编译失败" "编译通过" "$(head -3 "$TMP/a6b_cc.err")"
+        fi
         kill $A6_MOCK 2>/dev/null
     else
         bad "自愈: 编译失败" "编译通过" "$(head -3 "$TMP/a6_cc.err")"
