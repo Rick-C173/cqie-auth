@@ -19,8 +19,8 @@ int bn_from_hex(bn* a, const char* hex)
 {
     bn_zero(a);
     size_t n = strlen(hex);
-    /* 一个 limb 4 字节 = 8 个十六进制字符，故最多 8*BN_LIMBS 个字符
-     * (BN_LIMBS=40 时可容纳 320 字符 = 1280 bit，覆盖 1024/2048 bit 模数中的 1024) */
+    /* 一个 limb 4 字节 = 8 个十六进制字符，最多 8*BN_LIMBS = 512 个字符
+     * (BN_LIMBS=64 → 容量 2048 bit；真机模数 256 字符 = 1024 bit，只占低一半 limb) */
     if (n == 0 || n > 8 * BN_LIMBS) return 0;
     size_t nbytes = (n + 1) / 2;
     for (size_t j = 0; j < nbytes; j++)
