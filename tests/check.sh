@@ -1094,6 +1094,57 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$BPORT))==0 else 1)" && break
     fi
 fi
 
+# --------------------------------------------------- 3.17 单实例锁
+echo
+echo "== 3.17 单实例锁（login/reauth/logout 互斥） =="
+if ! have python3 || ! have flock; then
+    echo "  (缺少 python3 或 flock，跳过)"
+else
+    LPORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/l_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$LPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$LPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:$LPORT/generate_204"
+#define STATE_DIR       "$TMP/state-lock"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/l_override.h" \
+            -o "$TMP/cqie-lock" "$ROOT"/src/*.c 2>"$TMP/lock_cc.err"; then
+        mkdir -p "$TMP/state-lock"
+        # 用 flock CLI 占住同一把锁，模拟另一个实例正在运行
+        flock "$TMP/state-lock/.lock" -c 'sleep 4' &
+        HOLD=$!
+        sleep 0.3
+        ( cd "$TMP" && "$TMP/cqie-lock" status --state-dir "$TMP/state-lock" ) \
+            >"$TMP/lock_a.out" 2>"$TMP/lock_a.err"
+        # status 不加锁：即便锁被占用也应正常运行（此处探测离线，报"未在线"属正常）
+        grep -q "未在线" "$TMP/lock_a.out" && ! grep -q "另一个实例正在运行" "$TMP/lock_a.err" \
+            && ok "锁 A: status 不持锁，正常查询（未在线属探测预期）" \
+            || bad "锁 A: status 不应被锁拦截" "含「未在线」且无锁报错" "exit行: $(tail -2 "$TMP/lock_a.err")"
+        ( cd "$TMP" && "$TMP/cqie-lock" login --state-dir "$TMP/state-lock" ) \
+            >"$TMP/lock_b.out" 2>"$TMP/lock_b.err"
+        RTB=$?
+        [ "$RTB" = "1" ] && grep -q "另一个实例正在运行" "$TMP/lock_b.err" \
+            && ok "锁 B: 锁被占用时 login 立即失败（exit 1，不等待）" \
+            || bad "锁 B: 应被锁拦截" "exit=1 含「另一个实例正在运行」" "exit=$RTB $(cat "$TMP/lock_b.err")"
+        ( cd "$TMP" && "$TMP/cqie-lock" logout --state-dir "$TMP/state-lock" ) \
+            >"$TMP/lock_c.out" 2>"$TMP/lock_c.err"
+        grep -q "另一个实例正在运行" "$TMP/lock_c.err" \
+            && ok "锁 C: logout 同样被拦截" \
+            || bad "锁 C: logout 应被锁拦截" "含「另一个实例正在运行」" "$(cat "$TMP/lock_c.err")"
+        wait $HOLD 2>/dev/null
+        # 锁释放后应可正常运行（预检 portal 可达 -> 探测离线 -> 认证失败，但不报锁错误）
+        ( cd "$TMP" && "$TMP/cqie-lock" logout --state-dir "$TMP/state-lock" ) \
+            >"$TMP/lock_d.out" 2>"$TMP/lock_d.err"
+        ! grep -q "另一个实例正在运行" "$TMP/lock_d.err" \
+            && ok "锁 D: 锁释放后恢复正常" \
+            || bad "锁 D: 锁释放后不应再报锁错误" "无「另一个实例」" "$(cat "$TMP/lock_d.err")"
+    else
+        bad "锁: 编译失败" "编译通过" "$(head -3 "$TMP/lock_cc.err")"
+    fi
+fi
+
 echo
 echo "==================== 结果：通过 $PASS 项，失败 $FAIL 项 ===================="
 [ "$FAIL" -eq 0 ]

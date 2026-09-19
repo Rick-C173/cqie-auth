@@ -97,4 +97,12 @@ void compat_console_utf8(void);
 int compat_stdin_is_tty(void);
 void compat_echo(int on);
 
+/*
+ * 单实例锁：对锁文件做非阻塞独占锁定（POSIX flock / Windows 独占打开）。
+ * 进程退出（含崩溃）时自动释放，无死锁残留。
+ * 返回锁句柄（NULL = 已被其它实例持有或文件不可建）；compat_unlock_file 释放。
+ */
+void* compat_lock_file(const char* path);
+void compat_unlock_file(void* h);
+
 #endif /* COMPAT_H */

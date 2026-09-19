@@ -319,6 +319,42 @@ int cmd_status(void)
     return online ? 0 : 1;
 }
 
+/* ---- 单实例锁：login/reauth/logout 互斥，防 cron 与手动并发写状态文件 ----
+ * 注意 cmd_reauth 持锁后会再调 cmd_logout（它会再次尝试加锁），
+ * 因此用同进程重入计数：嵌套加锁只计数，最外层解锁时才真正释放。 */
+static void* g_session_lock;
+static int g_lock_depth;
+
+int auth_session_lock(void)
+{
+    if (g_lock_depth > 0)
+    {
+        g_lock_depth++;
+        return 1;
+    }
+    char path[600];
+    if (!state_path(path, sizeof path, ".lock")) return 0;
+    g_session_lock = compat_lock_file(path);
+    if (!g_session_lock)
+    {
+        LOG_ERROR("另一个实例正在运行（锁文件: %s）", path);
+        log_status("跳过: 已有实例在运行");
+        return 0;
+    }
+    g_lock_depth = 1;
+    LOG_DEBUG("已持有单实例锁: %s", path);
+    return 1;
+}
+
+void auth_session_unlock(void)
+{
+    if (g_lock_depth > 0 && --g_lock_depth == 0)
+    {
+        compat_unlock_file(g_session_lock);
+        g_session_lock = NULL;
+    }
+}
+
 /*
  * known_offline=1 表示调用方已经知道当前处于离线状态（reauth 刚注销完），
  * 可以直接跳过开头的 204 探测 —— 那最多是 5 个请求，纯属白跑。
@@ -595,6 +631,7 @@ done:
 
 int cmd_login(int force)
 {
+    if (!auth_session_lock()) return 1;
     /* 校园网预检：探测可能显示"在线"（能上外网），但那不代表在校园网。
      * portal 不可达时明确退出，避免在家/热点上 cron 误报"已在线"。 */
     if (!portal_reachable())
@@ -664,6 +701,7 @@ static int logout_once(const char* user_index)
 
 int cmd_logout(const char* user_index)
 {
+    if (!auth_session_lock()) return 1;
     /* 校园网预检：portal 不可达时三级来源全部无从谈起 */
     if (!portal_reachable())
     {
@@ -724,6 +762,7 @@ int cmd_logout(const char* user_index)
 
 int cmd_reauth(const char* user_index)
 {
+    if (!auth_session_lock()) return 1;
     /* 校园网预检（logout + login 两步都依赖 portal） */
     if (!portal_reachable())
     {

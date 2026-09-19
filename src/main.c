@@ -539,6 +539,7 @@ int main(int argc, char** argv)
         usage(stderr, argv[0]);
         ret = 2;
     }
+    auth_session_unlock(); /* 单实例锁随命令结束释放 */
     log_close();
     sock_quit(); /* POSIX 下是空操作；Windows 释放 Winsock */
     return ret;

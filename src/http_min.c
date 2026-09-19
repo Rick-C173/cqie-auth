@@ -329,6 +329,13 @@ static int read_raw_body(sock_t fd, const char* first, size_t first_len,
     if (clen >= 0)
     {
         size_t total = (size_t)clen;
+        /* 防御：与无 CL 分支同一上限，异常/恶意超长声明不再照单全收 */
+        if (total > BODY_MAX)
+        {
+            LOG_WARN("Content-Length %ld 超过防御上限 %d，截断读取",
+                     (long)clen, BODY_MAX);
+            total = BODY_MAX;
+        }
         size_t take = first_len < total ? first_len : total;
         if (take && !buf_append(raw, first, take)) return 0;
         size_t got = take;
@@ -750,7 +757,8 @@ int is_online(void)
         if (!sock_init())
         {
             LOG_ERROR("[probe] Winsock 初始化失败");
-            return -1;
+            return 0; /* 初始化失败按离线处理：调用方把非 1 一律当未在线，
+                         1.4.1 前这里返回 -1，会被 if(is_online()) 当真值误判 */
         }
         sigpipe_done = 1;
     }

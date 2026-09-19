@@ -77,6 +77,20 @@ void compat_echo(int on)
     SetConsoleMode(h, mode);
 }
 
+void* compat_lock_file(const char* path)
+{
+    /* 共享模式 0 = 独占：第二个实例打开直接失败；句柄随进程退出自动释放 */
+    HANDLE h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return NULL;
+    return h;
+}
+
+void compat_unlock_file(void* h)
+{
+    if (h) CloseHandle((HANDLE)h);
+}
+
 #else /* POSIX */
 
 #include <stdio.h>
@@ -84,6 +98,8 @@ void compat_echo(int on)
 #include <time.h>
 #include <unistd.h>   /* isatty */
 #include <termios.h>  /* 密码输入关回显 */
+#include <fcntl.h>    /* 单实例锁 */
+#include <sys/file.h> /* flock */
 
 int compat_stdin_is_tty(void) { return isatty(0); }
 
@@ -94,6 +110,23 @@ void compat_echo(int on)
     if (on) t.c_lflag |= ECHO;
     else    t.c_lflag &= ~(tcflag_t)ECHO;
     tcsetattr(0, TCSANOW, &t);
+}
+
+void* compat_lock_file(const char* path)
+{
+    int fd = open(path, O_RDWR | O_CREAT, 0600);
+    if (fd < 0) return NULL;
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) /* 非阻塞：已被持有立即失败 */
+    {
+        close(fd);
+        return NULL;
+    }
+    return (void*)(intptr_t)fd;
+}
+
+void compat_unlock_file(void* h)
+{
+    if (h) close((int)(intptr_t)h);
 }
 
 int sock_take_error(sock_t fd)

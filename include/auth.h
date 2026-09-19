@@ -25,6 +25,14 @@ const char* auth_password(void);
 const char* auth_service(void);
 
 /*
+ * 单实例锁（login/reauth/logout 互斥，防并发写状态文件）。
+ * auth_session_lock 成功返回 1；被其它实例持有时返回 0 并打印提示。
+ * auth_session_unlock 释放（未持锁时为空操作）；进程退出也会自动释放。
+ */
+int auth_session_lock(void);
+void auth_session_unlock(void);
+
+/*
  * 登录：已在线直接返回 0；否则抓认证页 -> 取公钥 -> 加密密码 -> 提交登录
  * -> 把 userIndex 写入状态目录。
  * force=1 时跳过"已在线"短路，强制走一次完整认证（reauth 用）。

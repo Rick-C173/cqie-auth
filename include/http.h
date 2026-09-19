@@ -36,7 +36,8 @@ long http_req(const char* url, const char* post, const char* referer, http_buf* 
  */
 long http_req_location(const char* url, char* loc, size_t locsz);
 
-/* 是否已在线（探测多个 generate_204） */
+/* 是否已在线（并行探测多个 generate_204）。只返回 1=在线 / 0=离线或探测不可用，
+ * 调用方一律按布尔使用，无 -1 之类的第三态。 */
 int is_online(void);
 
 /*
