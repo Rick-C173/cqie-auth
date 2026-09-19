@@ -131,28 +131,37 @@ static void usage(FILE* out, const char* argv0)
 
 /* ---- 首次运行向导 ---- */
 
-/* 读一行并去换行；echo_off=1 时关闭回显（密码输入） */
-static void read_line(char* buf, size_t sz, int echo_off)
+/*
+ * 读一行并去换行；echo_off=1 时关闭回显（密码输入）。
+ * 返回 1=读到内容（含空行），0=stdin 已结束（EOF）——EOF 必须有出口，
+ * 否则向导的重试循环会在管道关闭后无限刷屏（1.3.0 前的真实 bug）。
+ */
+static int read_line(char* buf, size_t sz, int echo_off)
 {
+    int ok;
     if (echo_off) compat_echo(0);
-    if (!fgets(buf, (int)sz, stdin))
-        buf[0] = 0;
-    else
+    ok = fgets(buf, (int)sz, stdin) != NULL;
+    if (ok)
     {
         size_t n = strlen(buf);
         while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
+    }
+    else
+    {
+        buf[0] = 0;
     }
     if (echo_off)
     {
         compat_echo(1);
         printf("\n"); /* 回显关闭时换行不会显示，补一个 */
     }
+    return ok;
 }
 
 /*
  * 首次设置向导：提问 -> 写配置文件（0600）。
  * user/pass/svc 传入已有值（可来自 -u 等），只对空字段提问。
- * 文件已存在时确认后才覆盖。返回 1=已写入，0=取消或写失败。
+ * 文件已存在时确认后才覆盖。返回 1=已写入，0=取消/EOF/写失败。
  */
 static int setup_wizard(const char* path, char* user, size_t usz,
                         char* pass, size_t psz, char* svc, size_t ssz)
@@ -163,7 +172,11 @@ static int setup_wizard(const char* path, char* user, size_t usz,
     {
         printf("用户名: ");
         fflush(stdout);
-        read_line(user, usz, 0);
+        if (!read_line(user, usz, 0))
+        {
+            printf("\n输入已结束，向导中止（未写入任何内容）。\n");
+            return 0;
+        }
     }
 
     for (;;)
@@ -171,17 +184,25 @@ static int setup_wizard(const char* path, char* user, size_t usz,
         char pass2[256] = "";
         printf("密码 (不回显): ");
         fflush(stdout);
-        read_line(pass, psz, 1);
+        if (!read_line(pass, psz, 1))
+        {
+            printf("\n输入已结束，向导中止（未写入任何内容）。\n");
+            return 0;
+        }
         printf("再输一遍: ");
         fflush(stdout);
-        read_line(pass2, sizeof pass2, 1);
+        if (!read_line(pass2, sizeof pass2, 1))
+        {
+            printf("\n输入已结束，向导中止（未写入任何内容）。\n");
+            return 0;
+        }
         if (pass[0] && strcmp(pass, pass2) == 0) break;
         printf("两次输入不一致或为空，请重新输入。\n");
     }
 
     printf("运营商名 (直接回车=自动探测): ");
     fflush(stdout);
-    read_line(svc, ssz, 0);
+    if (!read_line(svc, ssz, 0)) svc[0] = 0; /* EOF 按留空处理 */
 
     FILE* probe = fopen(path, "r");
     if (probe)
@@ -190,7 +211,7 @@ static int setup_wizard(const char* path, char* user, size_t usz,
         printf("配置文件已存在，覆盖? (y/N): ");
         fflush(stdout);
         char ans[16] = "";
-        read_line(ans, sizeof ans, 0);
+        read_line(ans, sizeof ans, 0); /* EOF 按默认 N，不覆盖 */
         if (ans[0] != 'y' && ans[0] != 'Y')
         {
             printf("已取消，未写入。\n");
@@ -397,6 +418,21 @@ int main(int argc, char** argv)
 
     if (!cmd)
     {
+        if (setup)
+        {
+            /* `cqie-auth --setup` 单独运行：直接作为"重新配置"命令，
+             * 现有配置值作为预填默认，完成后提示运行 login。 */
+            const char* p = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
+            if (!p) p = CONFIG_FILE;
+            char wu[128] = "", wp[256] = "", ws[128] = "";
+            load_config_file(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws);
+            if (setup_wizard(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws))
+            {
+                printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
+                return 0;
+            }
+            return 1; /* 取消/EOF/写失败 */
+        }
         usage(stderr, argv[0]);
         return 2;
     }
@@ -462,22 +498,19 @@ int main(int argc, char** argv)
         auth_set_credentials(cli_user, cli_pass, cli_svc);
     }
 
-    /* 首次运行向导：凭据缺失 + 交互终端（或显式 --setup）时引导生成配置文件。
-     * cron/管道等非终端环境不触发，保持"报错引导"的原有行为。 */
-    if (auth_user()[0] == 0 || auth_password()[0] == 0)
+    /* 首次运行向导触发：
+     * - 显式 --setup：总是运行（重新配置，覆盖前有确认）
+     * - 否则：凭据缺失 + login/reauth + 交互终端（cron/管道非终端不触发） */
+    if (setup || ((auth_user()[0] == 0 || auth_password()[0] == 0) &&
+                  compat_stdin_is_tty() &&
+                  (!strcmp(cmd, "login") || !strcmp(cmd, "reauth"))))
     {
-        int want = setup ||
-                   (compat_stdin_is_tty() &&
-                    (!strcmp(cmd, "login") || !strcmp(cmd, "reauth")));
-        if (want)
-        {
-            char wu[128] = "", wp[256] = "", ws[128] = "";
-            /* 已有的部分值（如 -u 给了账号）作为默认带入，只补缺失项 */
-            snprintf(wu, sizeof wu, "%s", auth_user());
-            snprintf(wp, sizeof wp, "%s", auth_password());
-            if (setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws))
-                auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
-        }
+        char wu[128] = "", wp[256] = "", ws[128] = "";
+        /* 已有的部分值（如 -u 给了账号）作为默认带入，只补缺失项 */
+        snprintf(wu, sizeof wu, "%s", auth_user());
+        snprintf(wp, sizeof wp, "%s", auth_password());
+        if (setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws))
+            auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
     }
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");

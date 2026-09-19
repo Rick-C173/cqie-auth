@@ -926,6 +926,65 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
     fi
 fi
 
+# --------------------------------------------------- 3.15 --setup 独立运行与 EOF 出口
+echo
+echo "== 3.15 --setup 独立可用 + stdin EOF 死循环防护 =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    S2PORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/s2_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$S2PORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$S2PORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-s2"
+#define USER_ID         ""
+#define PASSWORD        ""
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s2_override.h" \
+            -o "$TMP/cqie-s2" "$ROOT"/src/*.c 2>"$TMP/s2_cc.err"; then
+        # 场景 A：stdin 直接 EOF（管道空输入）-> 向导中止，不写文件，exit 1
+        ( cd "$TMP" && printf '' | "$TMP/cqie-s2" login --setup --config "$TMP/eof.conf" --state-dir "$TMP/state-s2" ) \
+            >"$TMP/eof.out" 2>"$TMP/eof.err"
+        RTE=$?
+        [ "$RTE" = "1" ] && grep -q "向导中止" "$TMP/eof.out" && [ ! -f "$TMP/eof.conf" ] \
+            && ok "EOF A: 输入立即结束时向导中止（exit 1，未写文件，无死循环）" \
+            || bad "EOF A: 应中止且不写文件" "exit=1 含「向导中止」" "exit=$RTE $(tail -2 "$TMP/eof.out")"
+
+        # 场景 B：cqie-auth --setup 单独运行（无命令）-> 写配置成功，exit 0
+        ( cd "$TMP" && printf 's2user\n%s\n%s\n校园网\n' "$PWD_TEST" "$PWD_TEST" \
+          | "$TMP/cqie-s2" --setup --config "$TMP/s2.conf" --state-dir "$TMP/state-s2" ) \
+            >"$TMP/s2.out" 2>"$TMP/s2.err"
+        RTS=$?
+        [ "$RTS" = "0" ] && grep -q "配置完成" "$TMP/s2.out" \
+            && ok "--setup 独立运行: 写配置成功并提示 login（exit 0）" \
+            || bad "--setup 独立运行: 应成功" "exit=0 含「配置完成」" "exit=$RTS $(tail -2 "$TMP/s2.out")"
+        SU=$(grep -c '^user=s2user$' "$TMP/s2.conf" 2>/dev/null)
+        [ "$SU" = "1" ] \
+            && ok "--setup 独立运行: 配置文件内容正确" \
+            || bad "--setup 独立运行: 配置文件不对" "user=s2user" "$(head -1 "$TMP/s2.conf" 2>/dev/null)"
+
+        # 场景 C：写完的配置立刻可用（login 读它认证成功）
+        python3 "$ROOT/tests/mock_ac.py" "$S2PORT" "$PWD_TEST" "$TMP/s2_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        S2_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
+            sleep 0.1
+        done
+        ( cd "$TMP" && "$TMP/cqie-s2" login --config "$TMP/s2.conf" --state-dir "$TMP/state-s2" ) \
+            >"$TMP/s2_login.out" 2>"$TMP/s2_login.err"
+        grep -q "认证成功" "$TMP/s2_login.out" \
+            && ok "--setup 独立运行: 生成的配置可直接登录" \
+            || bad "--setup 独立运行: 登录应成功" "含「认证成功」" "$(cat "$TMP/s2_login.out")"
+        kill $S2_MOCK 2>/dev/null
+    else
+        bad "3.15: 编译失败" "编译通过" "$(head -3 "$TMP/s2_cc.err")"
+    fi
+fi
+
 echo
 echo "==================== 结果：通过 $PASS 项，失败 $FAIL 项 ===================="
 [ "$FAIL" -eq 0 ]
