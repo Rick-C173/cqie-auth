@@ -713,9 +713,10 @@ EOF
             && ok "配置文件 A: 凭据来自配置文件，登录成功" \
             || bad "配置文件 A: 应登录成功" "含「认证成功」" "$(cat "$TMP/cfg_a.out")"
         CJ=$(python3 -c "import json;j=json.load(open('$TMP/c_log.json'))['login'];print(j['userId'],j['service'])")
-        [ "$CJ" = "cfguser001 测试运营商" ] \
-            && ok "配置文件 A: 登录请求的账号与运营商均来自配置文件" \
-            || bad "配置文件 A: 账号/运营商不对" "cfguser001 测试运营商" "$CJ"
+        # 1.6.0 起：配置运营商不在列表时回退列表第一项（服务端只认列表内值）
+        [ "$CJ" = "cfguser001 中国移动" ] \
+            && ok "配置文件 A: 账号来自配置，运营商不在列表时回退第一项" \
+            || bad "配置文件 A: 账号/运营商不对" "cfguser001 中国移动" "$CJ"
 
         # 场景 B：--config 指向不存在的文件 -> 参数期报错 exit 2
         ( cd "$TMP" && "$TMP/cqie-cfg" login --config "$TMP/no-such.conf" --state-dir "$TMP/state-cfg" ) \
@@ -1045,6 +1046,65 @@ EOF
             || bad "锁 D: 锁释放后不应再报锁错误" "无「另一个实例」" "$(cat "$TMP/lock_d.err")"
     else
         bad "锁: 编译失败" "编译通过" "$(head -3 "$TMP/lock_cc.err")"
+    fi
+fi
+
+# --------------------------------------------------- 3.18 运营商自愈写回
+echo
+echo "== 3.18 探测成功后运营商写回配置文件（自愈） =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    APORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/a6_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$APORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$APORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-autofix"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/a6_override.h" \
+            -o "$TMP/cqie-a6" "$ROOT"/src/*.c 2>"$TMP/a6_cc.err"; then
+        python3 "$ROOT/tests/mock_ac.py" "$APORT" "$PWD_TEST" "$TMP/a6_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        A6_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
+            sleep 0.1
+        done
+
+        # 场景 A：service 留空 -> 认证成功后写回探测结果（列表第一项）
+        printf 'user=testuser\npassword=%s\nservice=\n# 注释行保留\n' "$PWD_TEST" > "$TMP/af.conf"
+        ( cd "$TMP" && "$TMP/cqie-a6" login --config "$TMP/af.conf" --state-dir "$TMP/state-autofix" ) \
+            >"$TMP/af_a.out" 2>"$TMP/af_a.err"
+        grep -q "运营商已写回配置" "$TMP/af_a.out" \
+            && ok "自愈 A: service 留空 -> 探测结果写回配置" \
+            || bad "自愈 A: 应写回" "stdout 含「运营商已写回配置」" "$(cat "$TMP/af_a.out")"
+        grep -q '^service=中国移动$' "$TMP/af.conf" && grep -q '^# 注释行保留$' "$TMP/af.conf" \
+            && ok "自愈 A: service 行被替换且注释保留" \
+            || bad "自愈 A: 配置内容不对" "service=中国移动 + 注释保留" "$(cat "$TMP/af.conf")"
+
+        # 场景 B：service 写错（列表里没有）-> 认证成功后修正
+        printf 'user=testuser\npassword=%s\nservice=错误运营商\n' "$PWD_TEST" > "$TMP/af2.conf"
+        ( cd "$TMP" && "$TMP/cqie-a6" reauth --config "$TMP/af2.conf" --state-dir "$TMP/state-autofix" ) \
+            >"$TMP/af_b.out" 2>"$TMP/af_b.err"
+        grep -q '^service=中国移动$' "$TMP/af2.conf" \
+            && ok "自愈 B: 写错的运营商被修正" \
+            || bad "自愈 B: 应修正为列表命中值" "service=中国移动" "$(grep '^service' "$TMP/af2.conf" 2>/dev/null)"
+
+        # 场景 C：显式 --service（临时意图）-> 不写回
+        printf 'user=testuser\npassword=%s\nservice=\n' "$PWD_TEST" > "$TMP/af3.conf"
+        ( cd "$TMP" && "$TMP/cqie-a6" login --service 测试运营商 --config "$TMP/af3.conf" --state-dir "$TMP/state-autofix" ) \
+            >"$TMP/af_c.out" 2>"$TMP/af_c.err"
+        grep -q '^service=$' "$TMP/af3.conf" \
+            && ok "自愈 C: 显式 --service 为临时意图，不写回" \
+            || bad "自愈 C: 不应写回" "service= 保持为空" "$(grep '^service' "$TMP/af3.conf" 2>/dev/null)"
+        kill $A6_MOCK 2>/dev/null
+    else
+        bad "自愈: 编译失败" "编译通过" "$(head -3 "$TMP/a6_cc.err")"
     fi
 fi
 
