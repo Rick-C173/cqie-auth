@@ -20,6 +20,8 @@
 #include <string.h>
 #ifndef _WIN32
 #include <sys/stat.h> /* 配置文件权限检查 */
+#else
+#include <windows.h> /* MoveFileExA（配置文件原子替换） */
 #endif
 
 static void usage(FILE* out, const char* argv0)
@@ -130,6 +132,69 @@ static void usage(FILE* out, const char* argv0)
 }
 
 /* ---- 首次运行向导 ---- */
+
+/*
+ * 把探测到的运营商写回配置文件（自愈）：保留其余行与注释，仅替换/追加
+ * service= 行；临时文件 + rename 原子写，权限 0600。成功返回 1。
+ */
+static int config_update_service(const char* path, const char* svc)
+{
+    char body[4096] = "";
+    int replaced = 0;
+    FILE* in = fopen(path, "r");
+    if (in)
+    {
+        char line[512];
+        while (fgets(line, sizeof line, in))
+        {
+            const char* p = line;
+            while (*p == ' ' || *p == '\t') p++;
+            if (!replaced && strncmp(p, "service", 7) == 0)
+            {
+                const char* q = p + 7;
+                while (*q == ' ' || *q == '\t') q++;
+                if (*q == '=' || *q == '\n' || *q == 0)
+                {
+                    char add[600];
+                    snprintf(add, sizeof add, "service=%s\n", svc);
+                    if (strlen(body) + strlen(add) >= sizeof body) { fclose(in); return 0; }
+                    strcat(body, add);
+                    replaced = 1;
+                    continue;
+                }
+            }
+            if (strlen(body) + strlen(line) >= sizeof body) { fclose(in); return 0; }
+            strcat(body, line);
+        }
+        fclose(in);
+    }
+    if (!replaced)
+    {
+        size_t n = strlen(body);
+        char add[600];
+        if (n && body[n - 1] != '\n') strcat(body, "\n");
+        snprintf(add, sizeof add, "service=%s\n", svc);
+        if (strlen(body) + strlen(add) >= sizeof body) return 0;
+        strcat(body, add);
+    }
+    char tmp[640];
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    FILE* out = fopen(tmp, "w");
+    if (!out) return 0;
+    fputs(body, out);
+    fclose(out);
+#ifndef _WIN32
+    chmod(tmp, 0600);
+    if (rename(tmp, path) != 0)
+#else
+    if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING))
+#endif
+    {
+        remove(tmp);
+        return 0;
+    }
+    return 1;
+}
 
 /*
  * 读一行并去换行；echo_off=1 时关闭回显（密码输入）。
@@ -506,6 +571,7 @@ int main(int argc, char** argv)
     /* 凭据配置文件：--config > $CQIE_CONFIG > 编译期默认（可选文件，缺席不报错） */
     const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
     if (!cfg_path) cfg_path = CONFIG_FILE;
+    char cfg_svc_raw[128] = ""; /* 配置文件里的原始 service 值（写回自愈的基准） */
     {
         char cfg_user[128] = "", cfg_pass[256] = "", cfg_svc[128] = "";
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
@@ -521,6 +587,7 @@ int main(int argc, char** argv)
             usage(stderr, argv[0]);
             return 2;
         }
+        snprintf(cfg_svc_raw, sizeof cfg_svc_raw, "%s", cfg_svc);
         auth_set_credentials(cfg_user, cfg_pass, cfg_svc);
         /* 分层覆盖：配置文件 < 环境变量 < 命令行（setter 非空即覆盖，低→高依次调用） */
         auth_set_credentials(getenv("CQIE_USER"), getenv("CQIE_PASS"),
@@ -579,6 +646,25 @@ int main(int argc, char** argv)
         ret = 2;
     }
     auth_session_unlock(); /* 单实例锁随命令结束释放 */
+
+    /* 运营商自愈写回：login/reauth 成功后，若实际使用的运营商（探测命中）
+     * 与配置文件里的 service 不一致（留空或写错），把正确值写回——下次不再
+     * 依赖探测。显式 --service / CQIE_SERVICE 是临时意图，不写回。 */
+    if (ret == 0 && (!strcmp(cmd, "login") || !strcmp(cmd, "reauth")) &&
+        auth_last_service()[0] && !cli_svc)
+    {
+        const char* env_svc = getenv("CQIE_SERVICE");
+        const char* eff = auth_last_service();
+        if ((!env_svc || !env_svc[0]) &&
+            (cfg_svc_raw[0] == 0 || strcmp(cfg_svc_raw, eff) != 0))
+        {
+            if (config_update_service(cfg_path, eff))
+                printf("运营商已写回配置: %s\n", eff);
+            else
+                fprintf(stderr, "运营商写回配置失败（不影响本次认证）\n");
+        }
+    }
+
     log_close();
     sock_quit(); /* POSIX 下是空操作；Windows 释放 Winsock */
     return ret;

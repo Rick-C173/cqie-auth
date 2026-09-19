@@ -24,6 +24,10 @@ const char* auth_user(void);
 const char* auth_password(void);
 const char* auth_service(void);
 
+/* 最近一次 login 实际使用的运营商（探测命中或沿用配置的最终值）。
+ * login 未运行过时为空串。供"运营商自愈写回配置"判断用。 */
+const char* auth_last_service(void);
+
 /*
  * 单实例锁（login/reauth/logout 互斥，防并发写状态文件）。
  * auth_session_lock 成功返回 1；被其它实例持有时返回 0 并打印提示。

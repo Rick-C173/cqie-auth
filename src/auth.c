@@ -28,6 +28,7 @@ void auth_set_plain(int on) { g_plain = on; }
 
 /* ---- 运行期凭据（配置文件读取后注入；宏为编译期兜底，发布版默认空）---- */
 static char g_user[128] = "", g_pass[256] = "", g_service[128] = "";
+static char g_last_service[256] = ""; /* login 实际使用的运营商（探测命中或沿用配置） */
 
 void auth_set_credentials(const char* user, const char* pass, const char* service)
 {
@@ -40,6 +41,7 @@ void auth_set_credentials(const char* user, const char* pass, const char* servic
 const char* auth_user(void) { return g_user[0] ? g_user : USER_ID; }
 const char* auth_password(void) { return g_pass[0] ? g_pass : PASSWORD; }
 const char* auth_service(void) { return g_service[0] ? g_service : SERVICE_NAME; }
+const char* auth_last_service(void) { return g_last_service; }
 
 static const char* portal(void) { return g_portal ? g_portal : PORTAL_URL; }
 
@@ -225,24 +227,38 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
 /* 在 "a@b@c" 运营商列表里精确匹配 name，命中则拷贝到 out */
 static int service_pick(const char* list, const char* name, char* out, size_t outsz)
 {
+    const char* first = NULL;
+    size_t first_len = 0;
     const char* p = list;
     while (*p)
     {
         const char* e = strchr(p, '@');
         size_t len = e ? (size_t)(e - p) : strlen(p);
-        /*
-         * 未配置运营商名（配置留空）时取列表第一项——等价浏览器登录页
-         * 默认选中第一个 <option> 的行为。否则按名字精确匹配。
-         */
-        if (len && (!name[0] || (strlen(name) == len && strncmp(p, name, len) == 0)))
+        if (len)
         {
-            size_t c = len < outsz - 1 ? len : outsz - 1;
-            memcpy(out, p, c);
-            out[c] = 0;
-            return 1;
+            if (!first) { first = p; first_len = len; } /* 记住第一项 */
+            /*
+             * 配置名精确命中优先；未命中/未配置时最后回退列表第一项——
+             * 服务端只认列表内的值，沿用列表外的配置名必然被拒
+             * （"您未绑定服务对应的运营商"），回退至少给自愈写回一个机会。
+             */
+            if (name[0] && strlen(name) == len && strncmp(p, name, len) == 0)
+            {
+                size_t c = len < outsz - 1 ? len : outsz - 1;
+                memcpy(out, p, c);
+                out[c] = 0;
+                return 1;
+            }
         }
         if (!e) break;
         p = e + 1;
+    }
+    if (first)
+    {
+        size_t c = first_len < outsz - 1 ? first_len : outsz - 1;
+        memcpy(out, first, c);
+        out[c] = 0;
+        return 1;
     }
     return 0;
 }
@@ -421,11 +437,15 @@ static int login_impl(int force, int known_offline)
         if (service_pick(svc_list, auth_service(), picked, sizeof picked))
         {
             snprintf(service, sizeof service, "%s", picked);
-            LOG_INFO("运营商: 列表命中 \"%s\"", service);
+            if (auth_service()[0] && strcmp(auth_service(), picked) == 0)
+                LOG_INFO("运营商: 列表命中 \"%s\"", service);
+            else
+                LOG_WARN("运营商: 配置值 \"%s\" 不在列表，改用 \"%s\"（成功后写回配置）",
+                         auth_service()[0] ? auth_service() : "(空)", service);
         }
         else
         {
-            LOG_WARN("运营商: 列表里没有 \"%s\"，沿用配置名", auth_service());
+            LOG_WARN("运营商: 列表为空，沿用 \"%s\"", service);
         }
     }
     else if (extract_service(info.data, auth_service(), svc, sizeof svc) && svc[0])
@@ -437,6 +457,8 @@ static int login_impl(int force, int known_offline)
     {
         LOG_INFO("运营商: 未能获取运营商列表，沿用 \"%s\"", service);
     }
+    /* 记录本次实际使用的运营商（探测命中/沿用配置），供运营商自愈写回判断 */
+    snprintf(g_last_service, sizeof g_last_service, "%s", service);
 
     /* 4. 提取 mac，按需 RSA 加密密码 */
     char mac[64] = "";
