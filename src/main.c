@@ -158,6 +158,30 @@ static int read_line(char* buf, size_t sz, int echo_off)
     return ok;
 }
 
+/* 确保配置文件的父目录存在（逐级创建，已存在的层级 mkdir 失败会被忽略） */
+static void make_parent_dirs(const char* path)
+{
+    char dir[600];
+    snprintf(dir, sizeof dir, "%s", path);
+    char* slash = strrchr(dir, '/');
+#ifdef _WIN32
+    char* bs = strrchr(dir, '\\');
+    if (bs && (!slash || bs > slash)) slash = bs;
+#endif
+    if (!slash || slash == dir) return;
+    *slash = 0;
+    for (char* p = dir + 1; *p; p++)
+    {
+        if (*p == '/')
+        {
+            *p = 0;
+            compat_mkdir(dir); /* 已存在时报错属正常，忽略 */
+            *p = '/';
+        }
+    }
+    compat_mkdir(dir);
+}
+
 /*
  * 首次设置向导：提问 -> 写配置文件（0600）。
  * user/pass/svc 传入已有值（可来自 -u 等），只对空字段提问。
@@ -219,18 +243,24 @@ static int setup_wizard(const char* path, char* user, size_t usz,
         }
     }
 
+    make_parent_dirs(path);
     FILE* f = fopen(path, "w");
     if (!f)
     {
         fprintf(stderr, "无法写入 %s（权限不足？可用 --config 指定其它路径）\n", path);
         return 0;
     }
-    fprintf(f, "user=%s\npassword=%s\nservice=%s\n", user, pass, svc);
+    fprintf(f,
+            "# cqie-auth 凭据配置（key=value，# 注释；示例见 cqie-auth.conf.example）\n"
+            "# service 留空 = 自动探测运营商；建议本文件权限 600\n"
+            "user=%s\npassword=%s\nservice=%s\n", user, pass, svc);
     fclose(f);
 #ifndef _WIN32
     chmod(path, 0600); /* 凭据文件只允许属主读写 */
-#endif
     printf("已写入 %s (权限 600)\n", path);
+#else
+    printf("已写入 %s\n", path);
+#endif
     return 1;
 }
 
@@ -501,16 +531,25 @@ int main(int argc, char** argv)
     /* 首次运行向导触发：
      * - 显式 --setup：总是运行（重新配置，覆盖前有确认）
      * - 否则：凭据缺失 + login/reauth + 交互终端（cron/管道非终端不触发） */
+    int wiz_attempted = 0, wiz_ok = 0;
     if (setup || ((auth_user()[0] == 0 || auth_password()[0] == 0) &&
                   compat_stdin_is_tty() &&
                   (!strcmp(cmd, "login") || !strcmp(cmd, "reauth"))))
     {
+        wiz_attempted = 1;
         char wu[128] = "", wp[256] = "", ws[128] = "";
         /* 已有的部分值（如 -u 给了账号）作为默认带入，只补缺失项 */
         snprintf(wu, sizeof wu, "%s", auth_user());
         snprintf(wp, sizeof wp, "%s", auth_password());
-        if (setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws))
-            auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
+        wiz_ok = setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws);
+        if (wiz_ok) auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
+    }
+    /* 向导中止（EOF/取消/写失败）且凭据仍缺失：直接退出，不再跑命令产生二次报错 */
+    if (wiz_attempted && !wiz_ok &&
+        (auth_user()[0] == 0 || auth_password()[0] == 0))
+    {
+        fprintf(stderr, "设置未完成，已退出。\n");
+        return 1;
     }
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");

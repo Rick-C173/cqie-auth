@@ -920,6 +920,9 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
         [ "$WP" = "1" ] \
             && ok "向导: 生成的配置文件密码行正确" \
             || bad "向导: 配置文件密码行不对" "password=test-pass-123" "$(grep '^password' "$TMP/wizard.conf" 2>/dev/null)"
+        grep -q '^# cqie-auth' "$TMP/wizard.conf" \
+            && ok "向导: 生成的配置带注释头" \
+            || bad "向导: 配置缺注释头" "含「# cqie-auth」" "$(head -2 "$TMP/wizard.conf" 2>/dev/null)"
         kill $W_MOCK 2>/dev/null
     else
         bad "向导: 编译失败" "编译通过" "$(head -3 "$TMP/wizard_cc.err")"
@@ -952,17 +955,18 @@ EOF
             || bad "EOF A: 应中止且不写文件" "exit=1 含「向导中止」" "exit=$RTE $(tail -2 "$TMP/eof.out")"
 
         # 场景 B：cqie-auth --setup 单独运行（无命令）-> 写配置成功，exit 0
+        # 配置路径指向不存在的嵌套目录，顺带验证父目录自动创建
         ( cd "$TMP" && printf 's2user\n%s\n%s\n校园网\n' "$PWD_TEST" "$PWD_TEST" \
-          | "$TMP/cqie-s2" --setup --config "$TMP/s2.conf" --state-dir "$TMP/state-s2" ) \
+          | "$TMP/cqie-s2" --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2.out" 2>"$TMP/s2.err"
         RTS=$?
         [ "$RTS" = "0" ] && grep -q "配置完成" "$TMP/s2.out" \
             && ok "--setup 独立运行: 写配置成功并提示 login（exit 0）" \
             || bad "--setup 独立运行: 应成功" "exit=0 含「配置完成」" "exit=$RTS $(tail -2 "$TMP/s2.out")"
-        SU=$(grep -c '^user=s2user$' "$TMP/s2.conf" 2>/dev/null)
+        SU=$(grep -c '^user=s2user$' "$TMP/deep/nested/s2.conf" 2>/dev/null)
         [ "$SU" = "1" ] \
-            && ok "--setup 独立运行: 配置文件内容正确" \
-            || bad "--setup 独立运行: 配置文件不对" "user=s2user" "$(head -1 "$TMP/s2.conf" 2>/dev/null)"
+            && ok "--setup 独立运行: 配置文件内容正确（含父目录自动创建）" \
+            || bad "--setup 独立运行: 配置文件不对" "deep/nested/s2.conf 含 user=s2user" "$(head -1 "$TMP/deep/nested/s2.conf" 2>/dev/null)"
 
         # 场景 C：写完的配置立刻可用（login 读它认证成功）
         python3 "$ROOT/tests/mock_ac.py" "$S2PORT" "$PWD_TEST" "$TMP/s2_log.json" "$TMP/key.txt" \
@@ -974,7 +978,7 @@ s=socket.socket(); s.settimeout(0.2)
 sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
             sleep 0.1
         done
-        ( cd "$TMP" && "$TMP/cqie-s2" login --config "$TMP/s2.conf" --state-dir "$TMP/state-s2" ) \
+        ( cd "$TMP" && "$TMP/cqie-s2" login --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2_login.out" 2>"$TMP/s2_login.err"
         grep -q "认证成功" "$TMP/s2_login.out" \
             && ok "--setup 独立运行: 生成的配置可直接登录" \

@@ -23,7 +23,6 @@ enum
 
 /* level 为 LOG_LEVEL_*；file 非 NULL 时同时追加写入该文件 */
 void log_init(int level, const char* file);
-void log_set_level(int level);
 int log_level(void);
 void log_close(void);
 

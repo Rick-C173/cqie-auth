@@ -9,7 +9,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define CQIE_VERSION  "1.4.1"
+#define CQIE_VERSION  "1.4.2"
 
 /* ====== 认证信息 ======
  * 发布版凭据默认为空：运行时从配置文件读取（见 CONFIG_FILE，
