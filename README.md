@@ -10,7 +10,7 @@
 - **单二进制、零依赖**：自实现 HTTP 客户端（libcurl 静态链接要 833KB，这里约 130KB）
 - **凭据与代码分离**：账号/密码/运营商写在配置文件里，改密码不用重新编译
 - **并行在线探测**：多个 204 地址同时探测，离线判定最坏 ~2s
-- **注销三级兜底**：状态文件 → 服务端要回（redirectortosuccess.jsp）→ 拼接回退
+- **注销两级兜底**：状态文件 → 服务端要回（redirectortosuccess.jsp，真机确认行为）
 - **运维友好**：结果走 stdout / 诊断走 stderr；syslog 审计行可关；`--log` 落文件
 - **源 IP 绑定**：多网卡 / 多 WAN 时用 `--interface` 指定认证出口
 - **校园网预检**：portal 不可达时明确退出（不再误报"已在线"），家里跑 cron 一目了然
@@ -71,7 +71,7 @@ cqie-auth reauth        # 先注销再重新认证（换 IP / 会话卡死时用
 ```
 cqie-auth login [--force]     认证上线（已在线直接返回）
 cqie-auth reauth [index]      先注销再重新认证
-cqie-auth logout [index]      注销下线（三级 userIndex 来源自动兜底）
+cqie-auth logout [index]      注销下线（两级 userIndex 来源自动兜底）
 cqie-auth status              查询在线状态（退出码 0=在线, 1=离线）
 cqie-auth userindex [hex]     解码显示 userIndex
 ```

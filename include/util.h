@@ -25,8 +25,6 @@ int extract_mac(const char* query_string, char* out, size_t outsz);
  * 兼容 name 位于串首（无前置 &）；成功返回 1 */
 int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz);
 
-/* ASCII 文本 -> 小写 hex（两两一字节），返回写入 out 的字符数；放不下返回 0 */
-size_t hex_encode(const char* in, char* out, size_t outsz);
 
 /*
  * 等效 `xxd -r -p`：跳过空白、遇其它非十六进制字符即停，两两拼成字节。

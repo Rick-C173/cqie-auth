@@ -110,70 +110,6 @@ static void ui_decode(const char* raw, char* out, size_t outsz)
     }
 }
 
-/*
- * 本机发往 portal 的源 IP（真机观察：userIndex 解码后形如
- * "nasip_本机IP_账号"，本机 IP 就是 AC 眼里的源地址）。
- * 用 UDP connect + getsockname：不发包，只查路由表，微秒级。
- */
-static int local_ip(char* out, size_t outsz)
-{
-    /* --interface 指定了源 IP 时直接采用，与 HTTP 流量的出口保持一致 */
-    const char* bound = http_source_ip();
-    if (bound && bound[0])
-    {
-        snprintf(out, outsz, "%s", bound);
-        return 1;
-    }
-
-    const char* p = strstr(portal(), "http://");
-    if (!p) return 0;
-    p += 7;
-    char host[128] = "";
-    size_t i = 0;
-    while (*p && *p != '/' && *p != ':' && i + 1 < sizeof host) host[i++] = *p++;
-    if (!i) return 0;
-
-    struct addrinfo hints, *res = NULL;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET; /* portal 是 IPv4 内网地址 */
-    hints.ai_socktype = SOCK_DGRAM;
-    if (getaddrinfo(host, "80", &hints, &res) != 0 || !res) return 0;
-
-    int ok = 0;
-    sock_t fd = socket(res->ai_family, SOCK_DGRAM, 0);
-    if (fd != SOCK_INVALID)
-    {
-        if (connect(fd, res->ai_addr, res->ai_addrlen) == 0)
-        {
-            struct sockaddr_storage ss;
-            socklen_t sl = sizeof ss;
-            if (getsockname(fd, (struct sockaddr*)&ss, &sl) == 0 &&
-                ss.ss_family == AF_INET)
-                ok = inet_ntop(AF_INET, &((struct sockaddr_in*)&ss)->sin_addr,
-                               out, (socklen_t)outsz) != NULL;
-        }
-        sock_close(fd);
-    }
-    freeaddrinfo(res);
-    return ok;
-}
-
-/*
- * userIndex 缺失时的兜底（真机观察：userIndex 解码后 = "nasip_本机IP_账号"）：
- * nasip 取自登录时存下的 queryString 参数，拼出 ASCII 再转 hex 提交。
- * 拼接值不保证总被服务端接受，仅作为状态文件丢失（如 tmpfs 重启）后的重试。
- * 成功返回 1，out 得到 hex 形式。
- */
-static int ui_synthesize(char* out, size_t outsz)
-{
-    char nasip[128] = "";
-    if (!state_read(NASIP_FILE, nasip, sizeof nasip) || !nasip[0]) return 0;
-    char ip[64] = "";
-    if (!local_ip(ip, sizeof ip)) return 0;
-    char ascii[320];
-    snprintf(ascii, sizeof ascii, "%s_%s_%s", nasip, ip, auth_user());
-    return hex_encode(ascii, out, outsz) != 0;
-}
 
 /*
  * 来源②"服务端要回"：GET <portal>/redirectortosuccess.jsp。
@@ -433,17 +369,6 @@ static int login_impl(int force, int known_offline)
     qs_enc = urlencode(qs);
     if (!qs_enc) goto done;
     LOG_DEBUG("queryString(一次编码): %s", qs_enc);
-
-    /* 顺手把 nasip 存进状态目录：userIndex 文件丢失（如 tmpfs 重启）时
-     * logout 可用 "nasip_本机IP_账号" 拼接回退。失败不影响本次认证。 */
-    char nasip[128] = "";
-    if (extract_qs_param(qs, "nasip", nasip, sizeof nasip) && nasip[0])
-    {
-        if (state_write(NASIP_FILE, nasip))
-            LOG_DEBUG("nasip 已存: %s", nasip);
-        else
-            LOG_DEBUG("nasip 未写入状态目录（不影响本次认证）");
-    }
 
     /* 3. pageInfo：获取 RSA 公钥与运营商列表 */
     char referer[2048];
@@ -717,12 +642,12 @@ int cmd_logout(const char* user_index)
     int ret = 2; /* 2=网络错误 1=服务端未确认 0=确认成功 */
     if (user_index) ret = logout_once(user_index);
 
-    /* 来源优先级：指定参数/存储值 -> 服务端要回 -> 拼接。每级失败才降级。 */
+    /* 来源优先级：指定参数/存储值 -> 服务端要回。每级失败才降级。 */
     char remote[300] = "";
     if (ret != 0)
     {
         /* 服务端要回：状态文件丢失（tmpfs 重启）或存储值被拒时，
-         * 问服务端要当前 IP 会话的 userIndex，比拼接可靠得多。 */
+         * 问服务端要当前 IP 会话的 userIndex（存储值丢失时找回会话的唯一途径）。 */
         if (ui_fetch_remote(remote, sizeof remote) &&
             (!user_index || strcmp(remote, user_index) != 0))
         {
@@ -731,27 +656,13 @@ int cmd_logout(const char* user_index)
         }
     }
 
-    if (ret != 0 && is_online())
-    {
-        /* 拼接：hex("nasip_本机IP_账号")，纯猜测，放最后。
-         * 前置在线探测：离线时根本没有会话，拼接必然失败，直接跳过。 */
-        char synth[300];
-        if (ui_synthesize(synth, sizeof synth) &&
-            (!user_index || strcmp(synth, user_index) != 0) &&
-            (!remote[0] || strcmp(synth, remote) != 0))
-        {
-            LOG_INFO("拼接回退: hex(\"nasip_本机IP_账号\") 再试一次");
-            ret = logout_once(synth);
-        }
-    }
-
+    /* 两级来源（存储值 / 服务端要回）都落空通常意味着"本来就没有活跃会话"：
+     * 服务端不会对未认证 IP 重定向。对 reauth 而言注销本就是尽力而为，
+     * 降为 WARN 避免误导（用户容易误读成认证环节的问题）。 */
     if (ret != 0 && !user_index)
     {
-        /* 三级来源全部落空通常意味着"本来就没有活跃会话"（如离线状态下
-         * 服务端不会重定向、nasip 无记录），对 reauth 而言注销本就是尽力而为，
-         * 降为 WARN 避免误导（用户容易误读成认证环节的问题）。 */
         LOG_WARN("没有可用的 userIndex，跳过注销"
-                 "（无存储值、服务端无活跃会话、拼接回退不可用——可能本来就未登录）");
+                 "（无存储值、服务端无活跃会话——可能本来就未登录）");
         log_status("注销跳过: 没有 userIndex（可能本来就未登录）");
         return 1;
     }
@@ -775,7 +686,7 @@ int cmd_reauth(const char* user_index)
     if (user_index)
         LOG_INFO("第一步: 注销上一个会话（指定 userIndex）");
     else
-        LOG_INFO("第一步: 注销上一个会话（无 userIndex 时自动尝试拼接回退）");
+        LOG_INFO("第一步: 注销上一个会话（无 userIndex 时向服务端要回）");
     if (cmd_logout(user_index) != 0)
         LOG_WARN("注销未确认，仍继续尝试重新认证");
 
