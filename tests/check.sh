@@ -11,7 +11,7 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"; [ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null' EXIT
+trap '[ "${KEEP_TMP:-0}" = "1" ] || rm -rf "$TMP"; [ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null' EXIT
 
 PASS=0
 FAIL=0
@@ -311,7 +311,7 @@ else
 #define REAUTH_DELAY_MS 50
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/f_override.h" \
-            -o "$TMP/cqie-force" "$ROOT"/src/*.c 2>"$TMP/force_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/force_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$FPORT" "$PWD_TEST" "$TMP/f_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         FORCE_MOCK=$!
@@ -322,7 +322,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$FPORT))==0 else 1)" && break
             sleep 0.1
         done
 
-        ( cd "$TMP" && CQIE_DEBUG=1 "$TMP/cqie-force" login --force --state-dir "$TMP/run" \
+        ( cd "$TMP" && CQIE_DEBUG=1 "$TMP/cqie-under-test" login --force --state-dir "$TMP/run" \
             ) >"$TMP/force.out" 2>"$TMP/force.err"
         FT=$?
         [ "$FT" = 0 ] && grep -q "认证成功" "$TMP/force.out" \
@@ -369,8 +369,8 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PPORT))==0 else 1)" && break
 #define STATE_DIR        "$TMP/state-p204"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/p204.h" \
-            -o "$TMP/cqie-p204" "$ROOT"/src/*.c 2>"$TMP/p204.err"; then
-        ( cd "$TMP" && CQIE_DEBUG=1 "$TMP/cqie-p204" status ) >"$TMP/p204.out" 2>&1
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/p204.err"; then
+        ( cd "$TMP" && CQIE_DEBUG=1 "$TMP/cqie-under-test" status ) >"$TMP/p204.out" 2>&1
         RT=$?
         [ "$RT" = 0 ] && grep -q "已在线" "$TMP/p204.out" \
             && ok "并行探测: 命中 204 判定已在线" \
@@ -400,7 +400,7 @@ else
 #define STATE_DIR       "$TMP/state-plain"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/p_override.h" \
-            -o "$TMP/cqie-plain" "$ROOT"/src/*.c 2>"$TMP/plain_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/plain_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$PPORT" "$PWD_TEST" "$TMP/p_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         PLAIN_MOCK=$!
@@ -411,7 +411,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PPORT))==0 else 1)" && break
             sleep 0.1
         done
 
-        ( cd "$TMP" && "$TMP/cqie-plain" login --plain --state-dir "$TMP/state-plain" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --plain --state-dir "$TMP/state-plain" ) \
             >"$TMP/plain.out" 2>"$TMP/plain.err"
         grep -q "认证成功" "$TMP/plain.out" \
             && ok "--plain: 明文提交登录成功（mock 按明文比对通过）" \
@@ -442,7 +442,7 @@ else
 #define PASSWORD        "$PWD_TEST"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/r_override.h" \
-            -o "$TMP/cqie-reauth" "$ROOT"/src/*.c 2>"$TMP/reauth_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/reauth_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$RPORT" "$PWD_TEST" "$TMP/r_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         REAUTH_MOCK=$!
@@ -457,7 +457,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$RPORT))==0 else 1)" && break
         printf 'STOREDOLDHEX' > "$TMP/state-reauth/userIndex"  # 干扰值：应改用指定值
         IDX_SPEC=$(python3 -c "print('10.0.0.1_127.0.0.1_testuser'.encode().hex())")
 
-        ( cd "$TMP" && "$TMP/cqie-reauth" reauth "$IDX_SPEC" --state-dir "$TMP/state-reauth" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" reauth "$IDX_SPEC" --state-dir "$TMP/state-reauth" ) \
             >"$TMP/reauth.out" 2>"$TMP/reauth.err"
         grep -q "下线成功" "$TMP/reauth.out" \
             && ok "reauth 指定: 注销步成功" \
@@ -522,7 +522,7 @@ EOF
     # -U_FORTIFY_SOURCE：glibc 的 fortify 会把 syslog 包成 __syslog_chk 的 inline，
     # 覆盖掉下面的 #define syslog test_syslog，导致劫持失效（Ubuntu gcc 默认开）。
     if ${CC:-cc} -O2 -std=c99 -U_FORTIFY_SOURCE -I"$ROOT/include" -include "$TMP/nl_override.h" \
-            -o "$TMP/cqie-nosyslog" "$ROOT"/src/*.c "$TMP/syscap.c" 2>"$TMP/nl_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c "$TMP/syscap.c" 2>"$TMP/nl_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$NPORT" "$PWD_TEST" "$TMP/nl_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         NL_MOCK=$!
@@ -534,7 +534,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
         done
 
         # 场景 A：默认（不带参数）-> 状态行写入 syslog
-        ( cd "$TMP" && SYSCAP_FILE="$TMP/syscap_a.txt" "$TMP/cqie-nosyslog" login --state-dir "$TMP/state-nosyslog" ) \
+        ( cd "$TMP" && SYSCAP_FILE="$TMP/syscap_a.txt" "$TMP/cqie-under-test" login --state-dir "$TMP/state-nosyslog" ) \
             >"$TMP/nl_a.out" 2>"$TMP/nl_a.err"
         grep -q "认证成功" "$TMP/nl_a.out" \
             && ok "--no-syslog A: 登录成功" \
@@ -544,7 +544,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
             || bad "--no-syslog A: syslog 应有状态行" "含「认证成功」" "$(cat "$TMP/syscap_a.txt" 2>/dev/null)"
 
         # 场景 B：--no-syslog -> 不写
-        ( cd "$TMP" && SYSCAP_FILE="$TMP/syscap_b.txt" "$TMP/cqie-nosyslog" logout --no-syslog --state-dir "$TMP/state-nosyslog" ) \
+        ( cd "$TMP" && SYSCAP_FILE="$TMP/syscap_b.txt" "$TMP/cqie-under-test" logout --no-syslog --state-dir "$TMP/state-nosyslog" ) \
             >"$TMP/nl_b.out" 2>"$TMP/nl_b.err"
         grep -q "下线成功" "$TMP/nl_b.out" \
             && ok "--no-syslog B: 注销成功" \
@@ -572,7 +572,7 @@ else
 #define STATE_DIR       "$TMP/state-remote"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/r2_override.h" \
-            -o "$TMP/cqie-remote" "$ROOT"/src/*.c 2>"$TMP/remote_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/remote_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$R2PORT" "$PWD_TEST" "$TMP/r2_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         R2_MOCK=$!
@@ -586,7 +586,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$R2PORT))==0 else 1)" && break
         # 场景 A：存储值被拒 -> 服务端要回 -> 用 Location 里的值注销成功
         mkdir -p "$TMP/state-remote"
         printf 'FORCEFAIL' > "$TMP/state-remote/userIndex"
-        ( cd "$TMP" && "$TMP/cqie-remote" logout --state-dir "$TMP/state-remote" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" logout --state-dir "$TMP/state-remote" ) \
             >"$TMP/remote_a.out" 2>"$TMP/remote_a.err"
         grep -q "下线成功" "$TMP/remote_a.out" \
             && ok "服务端要回 A: 存储值被拒后改用服务端值注销成功" \
@@ -601,7 +601,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$R2PORT))==0 else 1)" && break
             || bad "服务端要回 A: userIndex 不对" "REMOTEFROMSERVER" "$A2_IDX"
 
         # 场景 B：状态目录全空（无 userIndex）-> 只靠服务端要回
-        ( cd "$TMP" && "$TMP/cqie-remote" logout --state-dir "$TMP/state-remote2" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" logout --state-dir "$TMP/state-remote2" ) \
             >"$TMP/remote_b.out" 2>"$TMP/remote_b.err"
         grep -q "下线成功" "$TMP/remote_b.out" \
             && ok "服务端要回 B: 无状态文件时从服务端拿到 userIndex 并注销" \
@@ -628,7 +628,7 @@ else
 #define PASSWORD        "$PWD_TEST"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/i_override.h" \
-            -o "$TMP/cqie-iface" "$ROOT"/src/*.c 2>"$TMP/iface_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/iface_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$IPORT" "$PWD_TEST" "$TMP/i_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         IF_MOCK=$!
@@ -640,7 +640,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$IPORT))==0 else 1)" && break
         done
 
         # 场景 A：绑定 127.0.0.12（loopback 段内另一地址）-> 服务端应看到它
-        ( cd "$TMP" && "$TMP/cqie-iface" login --interface 127.0.0.12 --state-dir "$TMP/state-iface" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --interface 127.0.0.12 --state-dir "$TMP/state-iface" ) \
             >"$TMP/iface_a.out" 2>"$TMP/iface_a.err"
         grep -q "认证成功" "$TMP/iface_a.out" \
             && ok "--interface A: 绑定源 IP 后登录成功" \
@@ -651,7 +651,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$IPORT))==0 else 1)" && break
             || bad "--interface A: 服务端看到的源 IP 不对" "127.0.0.12" "$CLT"
 
         # 场景 B：绑定本机不存在的地址 -> 所有连接失败（预检/探测阶段即失败，报错文案随失败点不同）
-        ( cd "$TMP" && "$TMP/cqie-iface" login --interface 203.0.113.1 --state-dir "$TMP/state-iface" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --interface 203.0.113.1 --state-dir "$TMP/state-iface" ) \
             >"$TMP/iface_b.out" 2>"$TMP/iface_b.err"
         RTB=$?
         [ "$RTB" != "0" ] && grep -qE "未捕获认证页|可能不在校园网环境" "$TMP/iface_b.err" \
@@ -659,7 +659,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$IPORT))==0 else 1)" && break
             || bad "--interface B: 应认证失败" "exit!=0 含「未捕获认证页/不在校园网」" "exit=$RTB $(tail -2 "$TMP/iface_b.err")"
 
         # 场景 C：非法 IP -> 参数校验直接拒绝
-        ( cd "$TMP" && "$TMP/cqie-iface" login --interface 999.1.1.1 --state-dir "$TMP/state-iface" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --interface 999.1.1.1 --state-dir "$TMP/state-iface" ) \
             >"$TMP/iface_c.out" 2>"$TMP/iface_c.err"
         RTC=$?
         [ "$RTC" = "2" ] && grep -q "无效的源 IP" "$TMP/iface_c.err" \
@@ -687,7 +687,7 @@ else
 #define PASSWORD        ""
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/c_override.h" \
-            -o "$TMP/cqie-cfg" "$ROOT"/src/*.c 2>"$TMP/cfg_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/cfg_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$CPORT" "$PWD_TEST" "$TMP/c_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         C_MOCK=$!
@@ -707,7 +707,7 @@ service = 测试运营商
 EOF
 
         # 场景 A：--config 注入凭据 -> 登录成功，且账号/运营商来自配置文件
-        ( cd "$TMP" && "$TMP/cqie-cfg" login --config "$TMP/cfg.conf" --state-dir "$TMP/state-cfg" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/cfg.conf" --state-dir "$TMP/state-cfg" ) \
             >"$TMP/cfg_a.out" 2>"$TMP/cfg_a.err"
         grep -q "认证成功" "$TMP/cfg_a.out" \
             && ok "配置文件 A: 凭据来自配置文件，登录成功" \
@@ -719,7 +719,7 @@ EOF
             || bad "配置文件 A: 账号/运营商不对" "cfguser001 中国移动" "$CJ"
 
         # 场景 B：--config 指向不存在的文件 -> 参数期报错 exit 2
-        ( cd "$TMP" && "$TMP/cqie-cfg" login --config "$TMP/no-such.conf" --state-dir "$TMP/state-cfg" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/no-such.conf" --state-dir "$TMP/state-cfg" ) \
             >"$TMP/cfg_b.out" 2>"$TMP/cfg_b.err"
         RTC2=$?
         [ "$RTC2" = "2" ] && grep -q "配置文件不存在" "$TMP/cfg_b.err" \
@@ -727,7 +727,7 @@ EOF
             || bad "配置文件 B: 应 exit 2" "exit=2" "exit=$RTC2 $(cat "$TMP/cfg_b.err")"
 
         # 场景 C：无配置文件且编译期凭据为空 -> 提示未配置账号
-        ( cd "$TMP" && "$TMP/cqie-cfg" login --state-dir "$TMP/state-cfg" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --state-dir "$TMP/state-cfg" ) \
             >"$TMP/cfg_c.out" 2>"$TMP/cfg_c.err"
         RTC3=$?
         [ "$RTC3" = "1" ] && grep -q "未配置账号" "$TMP/cfg_c.err" \
@@ -755,7 +755,7 @@ else
 #define PASSWORD        ""
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/m_override.h" \
-            -o "$TMP/cqie-multi" "$ROOT"/src/*.c 2>"$TMP/multi_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/multi_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$MPORT" "$PWD_TEST" "$TMP/m_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         M_MOCK=$!
@@ -767,7 +767,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$MPORT))==0 else 1)" && break
         done
 
         # 场景 A：命令行 -u/-p -> 登录成功且账号来自 CLI
-        ( cd "$TMP" && "$TMP/cqie-multi" login -u cliuser -p "$PWD_TEST" --state-dir "$TMP/state-multi" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login -u cliuser -p "$PWD_TEST" --state-dir "$TMP/state-multi" ) \
             >"$TMP/multi_a.out" 2>"$TMP/multi_a.err"
         grep -q "认证成功" "$TMP/multi_a.out" \
             && ok "凭据通道 A: -u/-p 登录成功" \
@@ -779,7 +779,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$MPORT))==0 else 1)" && break
 
         # 场景 B：环境变量 CQIE_USER/CQIE_PASS -> 登录成功且账号来自 env
         ( cd "$TMP" && CQIE_USER=envuser CQIE_PASS="$PWD_TEST" \
-          "$TMP/cqie-multi" login --state-dir "$TMP/state-multi" ) \
+          "$TMP/cqie-under-test" login --state-dir "$TMP/state-multi" ) \
             >"$TMP/multi_b.out" 2>"$TMP/multi_b.err"
         grep -q "认证成功" "$TMP/multi_b.out" \
             && ok "凭据通道 B: 环境变量登录成功" \
@@ -794,7 +794,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$MPORT))==0 else 1)" && break
 user=cfguser
 password=$PWD_TEST
 EOF
-        ( cd "$TMP" && "$TMP/cqie-multi" login -u cliuser2 --config "$TMP/multi.conf" --state-dir "$TMP/state-multi" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login -u cliuser2 --config "$TMP/multi.conf" --state-dir "$TMP/state-multi" ) \
             >"$TMP/multi_c.out" 2>"$TMP/multi_c.err"
         grep -q "认证成功" "$TMP/multi_c.out" \
             && ok "凭据通道 C: CLI + 配置文件同时存在时登录成功" \
@@ -825,7 +825,7 @@ else
 #define PASSWORD        ""
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/w_override.h" \
-            -o "$TMP/cqie-wizard" "$ROOT"/src/*.c 2>"$TMP/wizard_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/wizard_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$WPORT" "$PWD_TEST" "$TMP/w_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         W_MOCK=$!
@@ -838,7 +838,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
 
         # --setup + 管道输入：向导生成配置文件并当场继续登录（运营商留空=自动探测）
         ( cd "$TMP" && printf 'wizuser\n%s\n%s\n\n' "$PWD_TEST" "$PWD_TEST" \
-          | "$TMP/cqie-wizard" login --setup --config "$TMP/wizard.conf" --state-dir "$TMP/state-wizard" ) \
+          | "$TMP/cqie-under-test" login --setup --config "$TMP/wizard.conf" --state-dir "$TMP/state-wizard" ) \
             >"$TMP/wiz.out" 2>"$TMP/wiz.err"
         grep -q "已写入" "$TMP/wiz.out" \
             && ok "向导: 配置文件已生成" \
@@ -879,9 +879,9 @@ else
 #define PASSWORD        ""
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s2_override.h" \
-            -o "$TMP/cqie-s2" "$ROOT"/src/*.c 2>"$TMP/s2_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/s2_cc.err"; then
         # 场景 A：stdin 直接 EOF（管道空输入）-> 向导中止，不写文件，exit 1
-        ( cd "$TMP" && printf '' | "$TMP/cqie-s2" login --setup --config "$TMP/eof.conf" --state-dir "$TMP/state-s2" ) \
+        ( cd "$TMP" && printf '' | "$TMP/cqie-under-test" login --setup --config "$TMP/eof.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/eof.out" 2>"$TMP/eof.err"
         RTE=$?
         [ "$RTE" = "1" ] && grep -q "向导中止" "$TMP/eof.out" && [ ! -f "$TMP/eof.conf" ] \
@@ -891,7 +891,7 @@ EOF
         # 场景 B：cqie-auth --setup 单独运行（无命令）-> 写配置成功，exit 0
         # 配置路径指向不存在的嵌套目录，顺带验证父目录自动创建
         ( cd "$TMP" && printf 's2user\n%s\n%s\n校园网\n' "$PWD_TEST" "$PWD_TEST" \
-          | "$TMP/cqie-s2" --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
+          | "$TMP/cqie-under-test" --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2.out" 2>"$TMP/s2.err"
         RTS=$?
         [ "$RTS" = "0" ] && grep -q "配置完成" "$TMP/s2.out" \
@@ -912,7 +912,7 @@ s=socket.socket(); s.settimeout(0.2)
 sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
             sleep 0.1
         done
-        ( cd "$TMP" && "$TMP/cqie-s2" login --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2_login.out" 2>"$TMP/s2_login.err"
         grep -q "认证成功" "$TMP/s2_login.out" \
             && ok "--setup 独立运行: 生成的配置可直接登录" \
@@ -940,7 +940,7 @@ else
 #define PASSWORD        "$PWD_TEST"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/n_override.h" \
-            -o "$TMP/cqie-nocampus" "$ROOT"/src/*.c 2>"$TMP/nocampus_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/nocampus_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$NPORT" "$PWD_TEST" "$TMP/n_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         N_MOCK=$!
@@ -950,14 +950,14 @@ s=socket.socket(); s.settimeout(0.2)
 sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
             sleep 0.1
         done
-        ( cd "$TMP" && "$TMP/cqie-nocampus" login --state-dir "$TMP/state-nocampus" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --state-dir "$TMP/state-nocampus" ) \
             >"$TMP/nocampus.out" 2>"$TMP/nocampus.err"
         RTN=$?
         [ "$RTN" = "1" ] && grep -q "可能不在校园网环境" "$TMP/nocampus.err" \
             && ! grep -q "已在线" "$TMP/nocampus.out" \
             && ok "预检 A: 探测在线但 portal 不可达 -> 明确退出（不再误报已在线）" \
             || bad "预检 A: 应报不在校园网" "exit=1 含「可能不在校园网环境」" "exit=$RTN $(cat "$TMP/nocampus.err")"
-        ( cd "$TMP" && "$TMP/cqie-nocampus" logout --state-dir "$TMP/state-nocampus" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" logout --state-dir "$TMP/state-nocampus" ) \
             >"$TMP/nocampus_lo.out" 2>"$TMP/nocampus_lo.err"
         grep -q "可能不在校园网环境" "$TMP/nocampus_lo.err" \
             && ok "预检 A: logout 同样拦截" \
@@ -974,7 +974,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
 #define PASSWORD        "$PWD_TEST"
 EOF
         if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/b_override.h" \
-                -o "$TMP/cqie-b" "$ROOT"/src/*.c 2>"$TMP/b_cc.err"; then
+                -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/b_cc.err"; then
             python3 "$ROOT/tests/mock_ac.py" "$BPORT" "$PWD_TEST" "$TMP/b_log.json" "$TMP/key.txt" \
                 >/dev/null 2>&1 &
             B_MOCK=$!
@@ -984,7 +984,7 @@ s=socket.socket(); s.settimeout(0.2)
 sys.exit(0 if s.connect_ex(('127.0.0.1',$BPORT))==0 else 1)" && break
                 sleep 0.1
             done
-            ( cd "$TMP" && "$TMP/cqie-b" login --state-dir "$TMP/state-b" ) \
+            ( cd "$TMP" && "$TMP/cqie-under-test" login --state-dir "$TMP/state-b" ) \
                 >"$TMP/b.out" 2>"$TMP/b.err"
             grep -q "认证成功" "$TMP/b.out" \
                 && ok "预检 B: portal 可达时不误伤，正常认证" \
@@ -1014,32 +1014,32 @@ else
 #define PASSWORD        "$PWD_TEST"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/l_override.h" \
-            -o "$TMP/cqie-lock" "$ROOT"/src/*.c 2>"$TMP/lock_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/lock_cc.err"; then
         mkdir -p "$TMP/state-lock"
         # 用 flock CLI 占住同一把锁，模拟另一个实例正在运行
         flock "$TMP/state-lock/.lock" -c 'sleep 4' &
         HOLD=$!
         sleep 0.3
-        ( cd "$TMP" && "$TMP/cqie-lock" status --state-dir "$TMP/state-lock" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" status --state-dir "$TMP/state-lock" ) \
             >"$TMP/lock_a.out" 2>"$TMP/lock_a.err"
         # status 不加锁：即便锁被占用也应正常运行（此处探测离线，报"未在线"属正常）
         grep -q "未在线" "$TMP/lock_a.out" && ! grep -q "另一个实例正在运行" "$TMP/lock_a.err" \
             && ok "锁 A: status 不持锁，正常查询（未在线属探测预期）" \
             || bad "锁 A: status 不应被锁拦截" "含「未在线」且无锁报错" "exit行: $(tail -2 "$TMP/lock_a.err")"
-        ( cd "$TMP" && "$TMP/cqie-lock" login --state-dir "$TMP/state-lock" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --state-dir "$TMP/state-lock" ) \
             >"$TMP/lock_b.out" 2>"$TMP/lock_b.err"
         RTB=$?
         [ "$RTB" = "1" ] && grep -q "另一个实例正在运行" "$TMP/lock_b.err" \
             && ok "锁 B: 锁被占用时 login 立即失败（exit 1，不等待）" \
             || bad "锁 B: 应被锁拦截" "exit=1 含「另一个实例正在运行」" "exit=$RTB $(cat "$TMP/lock_b.err")"
-        ( cd "$TMP" && "$TMP/cqie-lock" logout --state-dir "$TMP/state-lock" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" logout --state-dir "$TMP/state-lock" ) \
             >"$TMP/lock_c.out" 2>"$TMP/lock_c.err"
         grep -q "另一个实例正在运行" "$TMP/lock_c.err" \
             && ok "锁 C: logout 同样被拦截" \
             || bad "锁 C: logout 应被锁拦截" "含「另一个实例正在运行」" "$(cat "$TMP/lock_c.err")"
         wait $HOLD 2>/dev/null
         # 锁释放后应可正常运行（预检 portal 可达 -> 探测离线 -> 认证失败，但不报锁错误）
-        ( cd "$TMP" && "$TMP/cqie-lock" logout --state-dir "$TMP/state-lock" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" logout --state-dir "$TMP/state-lock" ) \
             >"$TMP/lock_d.out" 2>"$TMP/lock_d.err"
         ! grep -q "另一个实例正在运行" "$TMP/lock_d.err" \
             && ok "锁 D: 锁释放后恢复正常" \
@@ -1065,7 +1065,7 @@ else
 #define PASSWORD        "$PWD_TEST"
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/a6_override.h" \
-            -o "$TMP/cqie-a6" "$ROOT"/src/*.c 2>"$TMP/a6_cc.err"; then
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/a6_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$APORT" "$PWD_TEST" "$TMP/a6_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
         A6_MOCK=$!
@@ -1078,7 +1078,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
 
         # 场景 A：service 留空 -> 认证成功后写回探测结果（列表第一项）
         printf 'user=testuser\npassword=%s\nservice=\n# 注释行保留\n' "$PWD_TEST" > "$TMP/af.conf"
-        ( cd "$TMP" && "$TMP/cqie-a6" login --config "$TMP/af.conf" --state-dir "$TMP/state-autofix" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/af.conf" --state-dir "$TMP/state-autofix" ) \
             >"$TMP/af_a.out" 2>"$TMP/af_a.err"
         grep -q "运营商已写回配置" "$TMP/af_a.out" \
             && ok "自愈 A: service 留空 -> 探测结果写回配置" \
@@ -1089,7 +1089,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
 
         # 场景 B：service 写错（列表里没有）-> 认证成功后修正
         printf 'user=testuser\npassword=%s\nservice=错误运营商\n' "$PWD_TEST" > "$TMP/af2.conf"
-        ( cd "$TMP" && "$TMP/cqie-a6" reauth --config "$TMP/af2.conf" --state-dir "$TMP/state-autofix" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" reauth --config "$TMP/af2.conf" --state-dir "$TMP/state-autofix" ) \
             >"$TMP/af_b.out" 2>"$TMP/af_b.err"
         grep -q '^service=中国移动$' "$TMP/af2.conf" \
             && ok "自愈 B: 写错的运营商被修正" \
@@ -1097,7 +1097,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
 
         # 场景 C：显式 --service（临时意图）-> 不写回
         printf 'user=testuser\npassword=%s\nservice=\n' "$PWD_TEST" > "$TMP/af3.conf"
-        ( cd "$TMP" && "$TMP/cqie-a6" login --service 测试运营商 --config "$TMP/af3.conf" --state-dir "$TMP/state-autofix" ) \
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --service 测试运营商 --config "$TMP/af3.conf" --state-dir "$TMP/state-autofix" ) \
             >"$TMP/af_c.out" 2>"$TMP/af_c.err"
         grep -q '^service=$' "$TMP/af3.conf" \
             && ok "自愈 C: 显式 --service 为临时意图，不写回" \
@@ -1115,8 +1115,8 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
 #define PASSWORD        "$PWD_TEST"
 EOF
         if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/a6b_override.h" \
-                -o "$TMP/cqie-a6b" "$ROOT"/src/*.c 2>"$TMP/a6b_cc.err"; then
-            ( cd "$TMP" && "$TMP/cqie-a6b" login --config "$TMP/af4.conf" --state-dir "$TMP/state-autofix" ) \
+                -o "$TMP/cqie-under-testb" "$ROOT"/src/*.c 2>"$TMP/a6b_cc.err"; then
+            ( cd "$TMP" && "$TMP/cqie-under-testb" login --config "$TMP/af4.conf" --state-dir "$TMP/state-autofix" ) \
                 >"$TMP/af_d.out" 2>"$TMP/af_d.err"
             grep -q "认证成功" "$TMP/af_d.out" \
                 && ok "自愈 D: 配置 portal= 生效（编译期默认不可达仍认证成功）" \
