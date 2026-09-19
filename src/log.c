@@ -84,6 +84,7 @@ void log_init(int level, const char* file)
     }
 }
 
+int log_level(void) { return g_level; }
 
 /* 过滤规则集中在这里，log_emit 与 log_enabled 共用，避免两处各写一份走样 */
 int log_enabled(int level)
