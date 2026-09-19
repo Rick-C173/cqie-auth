@@ -26,8 +26,9 @@
 ## 快速开始（OpenWrt）
 
 ```sh
-# 1. 部署（开发机上）
-./deploy.sh root@192.168.1.1
+# 1. 部署（开发机上；也可从 Release 页直接下载 cqie-auth.owrt）
+scp cqie-auth.owrt root@192.168.1.1:/usr/bin/cqie-auth
+ssh root@192.168.1.1 'chmod 755 /usr/bin/cqie-auth && mkdir -p /etc/cqie-auth && chmod 700 /etc/cqie-auth'
 
 # 2. 在路由器上运行 login——首次会进入交互式向导
 cqie-auth login
@@ -98,7 +99,7 @@ cqie-auth userindex [hex]     解码显示 userIndex
 ```sh
 make            # 本机 Linux
 make windows    # Windows x64（需 x86_64-w64-mingw32-gcc）
-make openwrt    # OpenWrt aarch64（需 musl 交叉工具链，见 BUILD.md）
+make openwrt    # OpenWrt aarch64（需 musl 交叉工具链，交叉编译变量见 Makefile）
 make check      # 端到端自检（需 python3 + cryptography，开发机用）
 ```
 
