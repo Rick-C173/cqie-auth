@@ -397,7 +397,7 @@ else
     cat > "$TMP/s_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$SPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$SPORT/probe"
-#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define PROBE_204_LIST  "http://127.0.0.1:$SPORT/generate_204"
 #define STATE_DIR       "$TMP/state-synth"
 #define USER_ID         "testuser"
 EOF
@@ -717,13 +717,13 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$IPORT))==0 else 1)" && break
             && ok "--interface A: 服务端看到的源 IP 是绑定的 127.0.0.12" \
             || bad "--interface A: 服务端看到的源 IP 不对" "127.0.0.12" "$CLT"
 
-        # 场景 B：绑定本机不存在的地址 -> 所有连接失败（探测阶段静默，最终报未捕获认证页）
+        # 场景 B：绑定本机不存在的地址 -> 所有连接失败（预检/探测阶段即失败，报错文案随失败点不同）
         ( cd "$TMP" && "$TMP/cqie-iface" login --interface 203.0.113.1 --state-dir "$TMP/state-iface" ) \
             >"$TMP/iface_b.out" 2>"$TMP/iface_b.err"
         RTB=$?
-        [ "$RTB" != "0" ] && grep -q "未捕获认证页" "$TMP/iface_b.err" \
+        [ "$RTB" != "0" ] && grep -qE "未捕获认证页|可能不在校园网环境" "$TMP/iface_b.err" \
             && ok "--interface B: 绑定不可用地址时全部连接失败（绑定真实生效）" \
-            || bad "--interface B: 应认证失败" "exit!=0 含「未捕获认证页」" "exit=$RTB $(tail -2 "$TMP/iface_b.err")"
+            || bad "--interface B: 应认证失败" "exit!=0 含「未捕获认证页/不在校园网」" "exit=$RTB $(tail -2 "$TMP/iface_b.err")"
 
         # 场景 C：非法 IP -> 参数校验直接拒绝
         ( cd "$TMP" && "$TMP/cqie-iface" login --interface 999.1.1.1 --state-dir "$TMP/state-iface" ) \
@@ -982,6 +982,115 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
         kill $S2_MOCK 2>/dev/null
     else
         bad "3.15: 编译失败" "编译通过" "$(head -3 "$TMP/s2_cc.err")"
+    fi
+fi
+
+# --------------------------------------------------- 3.16 校园网环境预检 + 拼接前置探测
+echo
+echo "== 3.16 校园网预检（portal 可达性） =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    NPORT=$((20000 + RANDOM % 20000))
+    # 场景 A：探测 204 通过（能上外网）但 portal 不可达 -> 不在校园网，明确退出
+    cat > "$TMP/n_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:1/eportal"
+#define PROBE_URL       "http://127.0.0.1:1/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:$NPORT/generate_204"
+#define STATE_DIR       "$TMP/state-nocampus"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/n_override.h" \
+            -o "$TMP/cqie-nocampus" "$ROOT"/src/*.c 2>"$TMP/nocampus_cc.err"; then
+        python3 "$ROOT/tests/mock_ac.py" "$NPORT" "$PWD_TEST" "$TMP/n_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        N_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
+            sleep 0.1
+        done
+        ( cd "$TMP" && "$TMP/cqie-nocampus" login --state-dir "$TMP/state-nocampus" ) \
+            >"$TMP/nocampus.out" 2>"$TMP/nocampus.err"
+        RTN=$?
+        [ "$RTN" = "1" ] && grep -q "可能不在校园网环境" "$TMP/nocampus.err" \
+            && ! grep -q "已在线" "$TMP/nocampus.out" \
+            && ok "预检 A: 探测在线但 portal 不可达 -> 明确退出（不再误报已在线）" \
+            || bad "预检 A: 应报不在校园网" "exit=1 含「可能不在校园网环境」" "exit=$RTN $(cat "$TMP/nocampus.err")"
+        ( cd "$TMP" && "$TMP/cqie-nocampus" logout --state-dir "$TMP/state-nocampus" ) \
+            >"$TMP/nocampus_lo.out" 2>"$TMP/nocampus_lo.err"
+        grep -q "可能不在校园网环境" "$TMP/nocampus_lo.err" \
+            && ok "预检 A: logout 同样拦截" \
+            || bad "预检 A: logout 应拦截" "含「可能不在校园网环境」" "$(cat "$TMP/nocampus_lo.err")"
+        kill $N_MOCK 2>/dev/null
+
+        # 场景 C：离线（204 全不通）logout -> 拼接回退被跳过
+        CPORT=$((20000 + RANDOM % 20000))
+        cat > "$TMP/c2_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$CPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$CPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-c2"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/c2_override.h" \
+                -o "$TMP/cqie-c2" "$ROOT"/src/*.c 2>"$TMP/c2_cc.err"; then
+            python3 "$ROOT/tests/mock_ac.py" "$CPORT" "$PWD_TEST" "$TMP/c2_log.json" "$TMP/key.txt" \
+                >/dev/null 2>&1 &
+            C2_MOCK=$!
+            for _ in $(seq 1 50); do
+                python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$CPORT))==0 else 1)" && break
+                sleep 0.1
+            done
+            mkdir -p "$TMP/state-c2"
+            printf 'nasip10.0.0.1' > "$TMP/state-c2/nasip" # 有 nasip 记录，验证前置探测拦截
+            ( cd "$TMP" && "$TMP/cqie-c2" logout --state-dir "$TMP/state-c2" ) \
+                >"$TMP/c2.out" 2>"$TMP/c2.err"
+            ! grep -q "拼接回退" "$TMP/c2.err" \
+                && ok "拼接前置探测: 离线时拼接回退被跳过" \
+                || bad "拼接前置探测: 离线不应尝试拼接" "无「拼接回退」" "$(grep '拼接' "$TMP/c2.err")"
+            kill $C2_MOCK 2>/dev/null
+        else
+            bad "拼接前置探测: 编译失败" "编译通过" "$(head -3 "$TMP/c2_cc.err")"
+        fi
+
+        # 场景 B（回归）：portal 可达 -> 预检不误伤，正常认证（复用 3.14 的向导产物亦可，这里独立跑）
+        BPORT=$((20000 + RANDOM % 20000))
+        cat > "$TMP/b_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$BPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$BPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-b"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/b_override.h" \
+                -o "$TMP/cqie-b" "$ROOT"/src/*.c 2>"$TMP/b_cc.err"; then
+            python3 "$ROOT/tests/mock_ac.py" "$BPORT" "$PWD_TEST" "$TMP/b_log.json" "$TMP/key.txt" \
+                >/dev/null 2>&1 &
+            B_MOCK=$!
+            for _ in $(seq 1 50); do
+                python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$BPORT))==0 else 1)" && break
+                sleep 0.1
+            done
+            ( cd "$TMP" && "$TMP/cqie-b" login --state-dir "$TMP/state-b" ) \
+                >"$TMP/b.out" 2>"$TMP/b.err"
+            grep -q "认证成功" "$TMP/b.out" \
+                && ok "预检 B: portal 可达时不误伤，正常认证" \
+                || bad "预检 B: 应正常认证" "含「认证成功」" "$(cat "$TMP/b.out")"
+            kill $B_MOCK 2>/dev/null
+        else
+            bad "预检 B: 编译失败" "编译通过" "$(head -3 "$TMP/b_cc.err")"
+        fi
+    else
+        bad "预检 A: 编译失败" "编译通过" "$(head -3 "$TMP/nocampus_cc.err")"
     fi
 fi
 

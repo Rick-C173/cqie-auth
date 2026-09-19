@@ -50,6 +50,23 @@ static int portal_endpoint(char* buf, size_t n, const char* method)
     return r > 0 && (size_t)r < n;
 }
 
+/*
+ * 校园网环境预检：portal 是校园网内网地址，出了校园网 TCP 必然不可达；
+ * 校园网内无论是否认证都可达——这是唯一可移植的"是否在校园网"判据。
+ */
+static int portal_reachable(void)
+{
+    const char* p = strstr(portal(), "http://");
+    if (!p) return 0;
+    p += 7;
+    char host[128] = "";
+    size_t i = 0;
+    while (*p && *p != '/' && *p != ':' && i + 1 < sizeof host) host[i++] = *p++;
+    int port = 80;
+    if (*p == ':') port = atoi(p + 1);
+    return http_host_reachable(host, port, HTTP_CONNECT_TIMEOUT_S * 1000L);
+}
+
 /* 打印表单内容，password 字段打码（日志里不留口令派生值） */
 static void log_form(int level, const char* tag, const char* body)
 {
@@ -576,7 +593,18 @@ done:
     return ret;
 }
 
-int cmd_login(int force) { return login_impl(force, 0); }
+int cmd_login(int force)
+{
+    /* 校园网预检：探测可能显示"在线"（能上外网），但那不代表在校园网。
+     * portal 不可达时明确退出，避免在家/热点上 cron 误报"已在线"。 */
+    if (!portal_reachable())
+    {
+        LOG_ERROR("无法访问校园网 portal (%s)，当前可能不在校园网环境", portal());
+        log_status("跳过: 不在校园网环境（portal 不可达）");
+        return 1;
+    }
+    return login_impl(force, 0);
+}
 
 /* 发一次注销请求并处理结果。
  * 返回 0=服务端确认成功；1=服务端明确拒绝（会话可能本来就不存在）；
@@ -636,6 +664,14 @@ static int logout_once(const char* user_index)
 
 int cmd_logout(const char* user_index)
 {
+    /* 校园网预检：portal 不可达时三级来源全部无从谈起 */
+    if (!portal_reachable())
+    {
+        LOG_ERROR("无法访问校园网 portal (%s)，当前可能不在校园网环境", portal());
+        log_status("跳过: 不在校园网环境（portal 不可达）");
+        return 1;
+    }
+
     char stored[1024] = "";
     if (!user_index && state_read(UI_FILE, stored, sizeof stored) && stored[0])
         user_index = stored;
@@ -657,9 +693,10 @@ int cmd_logout(const char* user_index)
         }
     }
 
-    if (ret != 0)
+    if (ret != 0 && is_online())
     {
-        /* 拼接：hex("nasip_本机IP_账号")，纯猜测，放最后。 */
+        /* 拼接：hex("nasip_本机IP_账号")，纯猜测，放最后。
+         * 前置在线探测：离线时根本没有会话，拼接必然失败，直接跳过。 */
         char synth[300];
         if (ui_synthesize(synth, sizeof synth) &&
             (!user_index || strcmp(synth, user_index) != 0) &&
@@ -687,6 +724,14 @@ int cmd_logout(const char* user_index)
 
 int cmd_reauth(const char* user_index)
 {
+    /* 校园网预检（logout + login 两步都依赖 portal） */
+    if (!portal_reachable())
+    {
+        LOG_ERROR("无法访问校园网 portal (%s)，当前可能不在校园网环境", portal());
+        log_status("跳过: 不在校园网环境（portal 不可达）");
+        return 1;
+    }
+
     LOG_INFO("===== reauth: 先注销再认证 =====");
     if (user_index)
         LOG_INFO("第一步: 注销上一个会话（指定 userIndex）");

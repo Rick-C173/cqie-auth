@@ -207,6 +207,14 @@ static sock_t connect_timeout(const char* host, int port, long timeout_ms)
     return fd;
 }
 
+int http_host_reachable(const char* host, int port, long timeout_ms)
+{
+    sock_t fd = connect_timeout(host, port, timeout_ms);
+    if (fd == SOCK_INVALID) return 0;
+    sock_close(fd);
+    return 1;
+}
+
 static int send_all(sock_t fd, const char* buf, size_t len, long deadline)
 {
     size_t off = 0;

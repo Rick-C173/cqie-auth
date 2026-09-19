@@ -13,6 +13,7 @@
 - **注销三级兜底**：状态文件 → 服务端要回（redirectortosuccess.jsp）→ 拼接回退
 - **运维友好**：结果走 stdout / 诊断走 stderr；syslog 审计行可关；`--log` 落文件
 - **源 IP 绑定**：多网卡 / 多 WAN 时用 `--interface` 指定认证出口
+- **校园网预检**：portal 不可达时明确退出（不再误报"已在线"），家里跑 cron 一目了然
 
 ## 平台支持
 

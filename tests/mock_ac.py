@@ -76,6 +76,11 @@ class Handler(BaseHTTPRequestHandler):
             json.dump(LOG, f, ensure_ascii=False, indent=2)
 
     def do_GET(self):
+        if self.path == "/generate_204":
+            # 模拟公网 204 探测点：客户端用它判断"能上外网"
+            self.send_response(204)
+            self.end_headers()
+            return
         if self.path == "/probe":
             LOG["probe"] = {"path": self.path}
             self._send(

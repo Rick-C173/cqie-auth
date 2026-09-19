@@ -50,6 +50,13 @@ int http_set_source_ip(const char* ip);
 const char* http_source_ip(void);
 
 /*
+ * 主机 TCP 可达性检查（只建连不发包，立刻关闭）。
+ * 用于校园网环境预检：portal 是内网地址，出了校园网必然不可达。
+ * 返回 1=可达，0=不可达（DNS 失败/连接超时/拒绝）。
+ */
+int http_host_reachable(const char* host, int port, long timeout_ms);
+
+/*
  * 后端初始化 / 释放。自实现 HTTP 客户端无需初始化，均为空操作。
  * 进程内各调用一次：http_global_init() 放在所有请求之前，
  * http_cleanup() 放在退出之前。http_global_init 返回 0 表示初始化失败。
