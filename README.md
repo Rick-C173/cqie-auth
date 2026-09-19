@@ -1,9 +1,34 @@
 # cqie-auth
 
 锐捷 ePortal（瑞捷网页认证）校园网命令行认证工具。纯 C 实现、零外部依赖的单二进制，
-为 OpenWrt 路由器设计，也支持 Linux / Windows。
+为 OpenWrt 路由器设计，也支持 Linux / Windows。最初为**重庆工程学院**（CQIE）校园网开发。
 
 > 本工具只自动化浏览器已有的网页认证流程，请遵守所在学校的网络管理规定。
+
+## 默认适配环境（重庆工程学院）
+
+编译期默认值即重庆工程学院的认证环境，其它学校/运营商环境用 `--portal` 运行期覆盖或
+`-DPORTAL_URL=...` 重新编译即可：
+
+| 项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `PORTAL_URL` | `http://10.253.3.84/eportal` | eportal 认证服务器（校园网内网） |
+| `PROBE_URL` | `http://123.123.123.123` | 探测地址：被 AC 劫持即判定"未认证" |
+| `PROBE_204_LIST` | 见下方 5 个公共 204 端点 | 并行探测，任一返回 204 即"能上外网" |
+
+`PROBE_204_LIST` 的 5 个地址：
+
+```
+http://204.ustclug.org/generate_204
+http://connect.rom.miui.com/generate_204
+http://wifi.vivo.com.cn/generate_204
+http://connectivitycheck.gstatic.com/generate_204
+http://connectivitycheck.platform.hicloud.com/generate_204
+```
+
+认证流程实际访问的接口都由 `PORTAL_URL` 派生：`{portal}/index.jsp`（认证页）、
+`{portal}/InterFace.do?method=login|logout|getServices`、
+`{portal}/redirectortosuccess.jsp`（注销时找回 userIndex）。
 
 ## 特性
 
