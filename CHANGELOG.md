@@ -3,6 +3,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.4.1] - 2026-09-19
+
+### Fixed
+- `is_online()` 探测初始化失败时返回 -1，被调用方按"在线"误判——现收敛为
+  只返回 1/0（`status` 在该路径下也不再误报"已在线"）
+- HTTP 响应 Content-Length 分支补防御性上限（256KB，与无 CL 分支一致），
+  异常/恶意超长声明不再照单全收
+
+### Added
+- **单实例锁**：`login` / `reauth` / `logout` 通过状态目录下 `.lock` 互斥
+  （POSIX flock / Windows 独占打开，进程退出自动释放），防止 cron 与手动
+  执行并发写状态文件；`status` / `userindex` 不受锁影响
+
 ## [1.4.0] - 2026-09-19
 
 ### Added
