@@ -174,9 +174,6 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT))==0 else 1)" && break
         [ "$(stat -c '%a' "$UI" 2>/dev/null)" = "600" ] \
             && ok "login: 状态文件权限 0600" \
             || bad "login: 状态文件权限应为 0600" "600" "$(stat -c '%a' "$UI" 2>/dev/null)"
-        [ "$(cat "$TMP/run/nasip" 2>/dev/null | tr -d '\n')" = "10.0.0.1" ] \
-            && ok "login: nasip 已从 queryString 存入状态目录（拼接回退的原料）" \
-            || bad "login: nasip 文件缺失或内容不对" "10.0.0.1" "$(cat "$TMP/run/nasip" 2>/dev/null)"
 
         # ---------- userindex：读状态文件/显式传 hex，解码输出 ----------
         OUT=$("$BIN" userindex --state-dir "$TMP/run" 2>/dev/null)
@@ -385,70 +382,6 @@ EOF
         bad "并行探测: 编译失败" "编译通过" "$(head -3 "$TMP/p204.err")"
     fi
     kill $P204_PID 2>/dev/null
-fi
-
-# --------------------------------------------------- 3.6 userIndex 拼接回退
-echo
-echo "== 3.6 logout 的 userIndex 拼接回退（hex(nasip_本机IP_账号)） =="
-if ! have python3; then
-    echo "  (缺少 python3，跳过)"
-else
-    SPORT=$((20000 + RANDOM % 20000))
-    cat > "$TMP/s_override.h" <<EOF
-#define PORTAL_URL      "http://127.0.0.1:$SPORT/eportal"
-#define PROBE_URL       "http://127.0.0.1:$SPORT/probe"
-#define PROBE_204_LIST  "http://127.0.0.1:$SPORT/generate_204"
-#define STATE_DIR       "$TMP/state-synth"
-#define USER_ID         "testuser"
-EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s_override.h" \
-            -o "$TMP/cqie-synth" "$ROOT"/src/*.c 2>"$TMP/synth_cc.err"; then
-        # noredirect：本节专测拼接回退，关掉 redirect 路由让服务端要回失败
-        python3 "$ROOT/tests/mock_ac.py" "$SPORT" "$PWD_TEST" "$TMP/s_log.json" "$TMP/key.txt" noredirect \
-            >/dev/null 2>&1 &
-        SYNTH_MOCK=$!
-        for _ in $(seq 1 50); do
-            python3 -c "import socket,sys
-s=socket.socket(); s.settimeout(0.2)
-sys.exit(0 if s.connect_ex(('127.0.0.1',$SPORT))==0 else 1)" && break
-            sleep 0.1
-        done
-
-        mkdir -p "$TMP/state-synth"
-        # 期望值：mock 劫持页里的 nasip=10.0.0.1；本机回环 IP 恒为 127.0.0.1；
-        # 账号用编译期默认 USER_ID
-        SYNTH_HEX=$(python3 -c "print('10.0.0.1_127.0.0.1_testuser'.encode().hex())")
-
-        # 场景 A：没有 userIndex 文件、只有 nasip -> 直接拼接注销
-        printf '10.0.0.1' > "$TMP/state-synth/nasip"
-        ( cd "$TMP" && "$TMP/cqie-synth" logout --state-dir "$TMP/state-synth" ) \
-            >"$TMP/synth.out" 2>"$TMP/synth.err"
-        grep -q "下线成功" "$TMP/synth.out" \
-            && ok "拼接回退 A: 无 userIndex 文件时拼接注销成功" \
-            || bad "拼接回退 A: 应注销成功" "含「下线成功」" "$(cat "$TMP/synth.out")"
-        A_IDX=$(python3 -c "import json;print(json.load(open('$TMP/s_log.json'))['logout']['userIndex'])")
-        [ "$A_IDX" = "$SYNTH_HEX" ] \
-            && ok "拼接回退 A: 服务端收到 hex(10.0.0.1_127.0.0.1_testuser)" \
-            || bad "拼接回退 A: userIndex 值不对" "$SYNTH_HEX" "$A_IDX"
-
-        # 场景 B：存储的 userIndex 被服务端拒绝（FORCEFAIL）-> 失败后自动改用拼接值
-        printf 'FORCEFAIL' > "$TMP/state-synth/userIndex"
-        ( cd "$TMP" && "$TMP/cqie-synth" logout --state-dir "$TMP/state-synth" ) \
-            >"$TMP/synth2.out" 2>"$TMP/synth2.err"
-        grep -q "下线成功" "$TMP/synth2.out" \
-            && ok "拼接回退 B: 存储值被拒后自动改用拼接值重试成功" \
-            || bad "拼接回退 B: 重试应成功" "含「下线成功」" "$(cat "$TMP/synth2.out")"
-        [ ! -f "$TMP/state-synth/userIndex" ] \
-            && ok "拼接回退 B: 成功后清理了失效的 userIndex 文件" \
-            || bad "拼接回退 B: 失效文件应被删除"
-        B_CNT=$(python3 -c "import json;print(json.load(open('$TMP/s_log.json'))['counts']['logout'])")
-        [ "$B_CNT" = "3" ] \
-            && ok "拼接回退 B: 服务端共收到 3 次注销（A 1 次 + B 先拒后成 2 次）" \
-            || bad "拼接回退 B: 注销次数不对" "3" "$B_CNT"
-        kill $SYNTH_MOCK 2>/dev/null
-    else
-        bad "拼接回退: 编译失败" "编译通过" "$(head -3 "$TMP/synth_cc.err")"
-    fi
 fi
 
 # --------------------------------------------------- 3.7 --plain 明文提交
@@ -667,7 +600,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$R2PORT))==0 else 1)" && break
             && ok "服务端要回 A: 注销用的是 Location 里的 userIndex" \
             || bad "服务端要回 A: userIndex 不对" "REMOTEFROMSERVER" "$A2_IDX"
 
-        # 场景 B：状态目录全空（无 userIndex 也无 nasip，拼接不可用）-> 只靠服务端要回
+        # 场景 B：状态目录全空（无 userIndex）-> 只靠服务端要回
         ( cd "$TMP" && "$TMP/cqie-remote" logout --state-dir "$TMP/state-remote2" ) \
             >"$TMP/remote_b.out" 2>"$TMP/remote_b.err"
         grep -q "下线成功" "$TMP/remote_b.out" \
@@ -989,7 +922,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
     fi
 fi
 
-# --------------------------------------------------- 3.16 校园网环境预检 + 拼接前置探测
+# --------------------------------------------------- 3.16 校园网环境预检
 echo
 echo "== 3.16 校园网预检（portal 可达性） =="
 if ! have python3; then
@@ -1028,40 +961,6 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
         grep -q "可能不在校园网环境" "$TMP/nocampus_lo.err" \
             && ok "预检 A: logout 同样拦截" \
             || bad "预检 A: logout 应拦截" "含「可能不在校园网环境」" "$(cat "$TMP/nocampus_lo.err")"
-        kill $N_MOCK 2>/dev/null
-
-        # 场景 C：离线（204 全不通）logout -> 拼接回退被跳过
-        CPORT=$((20000 + RANDOM % 20000))
-        cat > "$TMP/c2_override.h" <<EOF
-#define PORTAL_URL      "http://127.0.0.1:$CPORT/eportal"
-#define PROBE_URL       "http://127.0.0.1:$CPORT/probe"
-#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
-#define STATE_DIR       "$TMP/state-c2"
-#define USER_ID         "testuser"
-#define PASSWORD        "$PWD_TEST"
-EOF
-        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/c2_override.h" \
-                -o "$TMP/cqie-c2" "$ROOT"/src/*.c 2>"$TMP/c2_cc.err"; then
-            python3 "$ROOT/tests/mock_ac.py" "$CPORT" "$PWD_TEST" "$TMP/c2_log.json" "$TMP/key.txt" \
-                >/dev/null 2>&1 &
-            C2_MOCK=$!
-            for _ in $(seq 1 50); do
-                python3 -c "import socket,sys
-s=socket.socket(); s.settimeout(0.2)
-sys.exit(0 if s.connect_ex(('127.0.0.1',$CPORT))==0 else 1)" && break
-                sleep 0.1
-            done
-            mkdir -p "$TMP/state-c2"
-            printf 'nasip10.0.0.1' > "$TMP/state-c2/nasip" # 有 nasip 记录，验证前置探测拦截
-            ( cd "$TMP" && "$TMP/cqie-c2" logout --state-dir "$TMP/state-c2" ) \
-                >"$TMP/c2.out" 2>"$TMP/c2.err"
-            ! grep -q "拼接回退" "$TMP/c2.err" \
-                && ok "拼接前置探测: 离线时拼接回退被跳过" \
-                || bad "拼接前置探测: 离线不应尝试拼接" "无「拼接回退」" "$(grep '拼接' "$TMP/c2.err")"
-            kill $C2_MOCK 2>/dev/null
-        else
-            bad "拼接前置探测: 编译失败" "编译通过" "$(head -3 "$TMP/c2_cc.err")"
-        fi
 
         # 场景 B（回归）：portal 可达 -> 预检不误伤，正常认证（复用 3.14 的向导产物亦可，这里独立跑）
         BPORT=$((20000 + RANDOM % 20000))

@@ -9,7 +9,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define CQIE_VERSION  "1.4.2"
+#define CQIE_VERSION  "1.5.0"
 
 /* ====== 认证信息 ======
  * 发布版凭据默认为空：运行时从配置文件读取（见 CONFIG_FILE，
@@ -169,9 +169,6 @@
 #endif
 #ifndef UI_FILE
 #define UI_FILE       "userIndex"   /* 登录成功后保存的 userIndex（logout/reauth 用） */
-#endif
-#ifndef NASIP_FILE
- #define NASIP_FILE    "nasip"       /* 登录时顺手存的 queryString.nasip（userIndex 丢失时拼接回退用） */
 #endif
 
 #endif /* CONFIG_H */

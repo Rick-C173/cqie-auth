@@ -125,21 +125,6 @@ int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz)
     return i > 0;
 }
 
-size_t hex_encode(const char* in, char* out, size_t outsz)
-{
-    static const char HEX[] = "0123456789abcdef";
-    size_t n = strlen(in);
-    if (n * 2 + 1 > outsz) return 0;
-    for (size_t i = 0; i < n; i++)
-    {
-        unsigned char c = (unsigned char)in[i];
-        out[i * 2] = HEX[c >> 4];
-        out[i * 2 + 1] = HEX[c & 15];
-    }
-    out[n * 2] = 0;
-    return n * 2;
-}
-
 size_t hex_decode(const char* s, char* out, size_t outsz)
 {
     int hi = -1;

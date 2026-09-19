@@ -6,10 +6,10 @@
 # 或命令行 -u / -p / --service 临时覆盖（优先级：命令行 > 环境变量 > 本文件）。
 
 # 学号/账号
-user=20250001
+user=263420135
 
 # 认证密码
-password=your-password
+password=Zsh20050503_
 
 # 运营商名（须与认证页运营商列表中的名称一致；留空则自动探测）
 service=
