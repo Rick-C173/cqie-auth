@@ -3,6 +3,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.6.3] - 2026-09-20
+
+### Changed
+- 运营商规避词表收敛为仅"校园网"一项（移除免费/体验/试用的猜测性规避）
+
 ## [1.6.2] - 2026-09-20
 
 ### Added

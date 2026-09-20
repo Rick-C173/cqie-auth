@@ -226,10 +226,11 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
 
 /* 在 "a@b@c" 运营商列表里精确匹配 name，命中则拷贝到 out */
 /*
- * 自动回退的规避词表：命中这些关键词的运营商（常见为限时长/计费套餐）
- * 在自动回退时排到所有普通项之后。精确配置命中的运营商不受影响。
+ * 自动回退的规避词表：命中这些关键词的运营商在自动回退/逐项尝试时
+ * 排到所有普通项之后（"校园网"为限时套餐，误选会消耗免费时长）。
+ * 精确配置命中的运营商不受影响。
  */
-static const char* const SERVICE_AVOID[] = { "校园网", "免费", "体验", "试用" };
+static const char* const SERVICE_AVOID[] = { "校园网" };
 
 static int service_avoided(const char* p, size_t len)
 {
