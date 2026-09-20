@@ -589,8 +589,8 @@ int main(int argc, char** argv)
                 }
                 state_init(state_opt);
                 auth_set_dry_run(0);
-                if (iface && http_set_source_ip(iface) == 0)
-                    ; /* --interface 传了就生效；无效值静默忽略（向导场景少见） */
+                if (iface)
+                    http_set_source_ip(iface); /* --interface 传了就生效；无效值忽略 */
                 int r = cmd_login(1); /* force：强制重认证作为凭据实测 */
                 auth_session_unlock();
                 if (r == 0)
