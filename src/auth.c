@@ -225,10 +225,31 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
 }
 
 /* 在 "a@b@c" 运营商列表里精确匹配 name，命中则拷贝到 out */
+/*
+ * 自动回退的规避词表：命中这些关键词的运营商（常见为限时长/计费套餐）
+ * 在自动回退时排到所有普通项之后。精确配置命中的运营商不受影响。
+ */
+static const char* const SERVICE_AVOID[] = { "校园网", "免费", "体验", "试用" };
+
+static int service_avoided(const char* p, size_t len)
+{
+    for (size_t i = 0; i < sizeof SERVICE_AVOID / sizeof *SERVICE_AVOID; i++)
+    {
+        size_t kwl = strlen(SERVICE_AVOID[i]);
+        if (len < kwl) continue;
+        for (size_t j = 0; j + kwl <= len; j++)
+            if (memcmp(p + j, SERVICE_AVOID[i], kwl) == 0)
+                return 1;
+    }
+    return 0;
+}
+
 static int service_pick(const char* list, const char* name, char* out, size_t outsz)
 {
     const char* first = NULL;
     size_t first_len = 0;
+    const char* first_ok = NULL; /* 第一个不命中规避词表的项（回退优先用它） */
+    size_t first_ok_len = 0;
     const char* p = list;
     while (*p)
     {
@@ -236,7 +257,12 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
         size_t len = e ? (size_t)(e - p) : strlen(p);
         if (len)
         {
-            if (!first) { first = p; first_len = len; } /* 记住第一项 */
+            if (!first) { first = p; first_len = len; }
+            if (!first_ok && !service_avoided(p, len))
+            {
+                first_ok = p;
+                first_ok_len = len;
+            }
             /*
              * 配置名精确命中优先；未命中/未配置时最后回退列表第一项——
              * 服务端只认列表内的值，沿用列表外的配置名必然被拒
@@ -253,10 +279,14 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
         if (!e) break;
         p = e + 1;
     }
-    if (first)
+    /* 回退优先选非规避项（如"中国移动"），避免自动登录误选限时/计费套餐；
+     * 列表全是规避项时才退回列表第一项。 */
+    const char* pick = first_ok ? first_ok : first;
+    size_t pick_len = first_ok ? first_ok_len : first_len;
+    if (pick)
     {
-        size_t c = first_len < outsz - 1 ? first_len : outsz - 1;
-        memcpy(out, first, c);
+        size_t c = pick_len < outsz - 1 ? pick_len : outsz - 1;
+        memcpy(out, pick, c);
         out[c] = 0;
         return 1;
     }
@@ -426,39 +456,63 @@ static int login_impl(int force, int known_offline)
     LOG_TRACE("publicKeyModulus = %s", n_hex);
 #endif
 
-    /* 运营商：优先 userV2.do?method=getServices（新版 eportal 正式接口，
-     * 返回 "名@名@名" 纯文本）；旧版走 pageInfo 里的 <option>；都没有则沿用配置名 */
-    char service[256] = "", svc[256] = "", svc_list[1024] = "";
-    snprintf(service, sizeof service, "%s", auth_service());
+    /* 运营商候选序列：
+     * - 配置非空：单一候选（列表精确命中，或回退规避词表后的第一普通项）
+     * - 配置为空：整个列表逐个尝试，规避词表项（校园网/免费等限时套餐）排最后；
+     *   认证成功后把命中的运营商写回配置文件，下次直接精确命中 */
+    char service[256] = "", svc_list[1024] = "";
+    char cands[16][256];
+    int ncand = 0;
     if (fetch_services(qs, referer, svc_list, sizeof svc_list))
     {
         LOG_INFO("运营商列表: %s", svc_list);
-        char picked[256];
-        if (service_pick(svc_list, auth_service(), picked, sizeof picked))
+        if (auth_service()[0])
         {
-            snprintf(service, sizeof service, "%s", picked);
-            if (auth_service()[0] && strcmp(auth_service(), picked) == 0)
-                LOG_INFO("运营商: 列表命中 \"%s\"", service);
+            char picked[256] = "";
+            if (service_pick(svc_list, auth_service(), picked, sizeof picked))
+            {
+                snprintf(cands[ncand++], sizeof cands[0], "%s", picked);
+                if (strcmp(auth_service(), picked) == 0)
+                    LOG_INFO("运营商: 列表命中 \"%s\"", picked);
+                else
+                    LOG_WARN("运营商: 配置值 \"%s\" 不在列表，改用 \"%s\"",
+                             auth_service(), picked);
+            }
             else
-                LOG_WARN("运营商: 配置值 \"%s\" 不在列表，改用 \"%s\"（成功后写回配置）",
-                         auth_service()[0] ? auth_service() : "(空)", service);
+            {
+                snprintf(cands[ncand++], sizeof cands[0], "%s", auth_service());
+                LOG_WARN("运营商: 列表为空，沿用 \"%s\"", auth_service());
+            }
         }
         else
         {
-            LOG_WARN("运营商: 列表为空，沿用 \"%s\"", service);
+            /* 配置为空：两遍稳定分区——非规避项在前，规避项（校园网/免费等）在后 */
+            for (int pass = 0; pass < 2 && ncand < 15; pass++)
+            {
+                const char* p = svc_list;
+                while (*p && ncand < 15)
+                {
+                    const char* e = strchr(p, '@');
+                    size_t len = e ? (size_t)(e - p) : strlen(p);
+                    if (len && service_avoided(p, len) == pass)
+                    {
+                        size_t c = len < sizeof cands[0] - 1 ? len : sizeof cands[0] - 1;
+                        memcpy(cands[ncand], p, c);
+                        cands[ncand][c] = 0;
+                        ncand++;
+                    }
+                    if (!e) break;
+                    p = e + 1;
+                }
+            }
+            LOG_INFO("运营商: 配置为空，按顺序尝试 %d 个候选（限时/计费类排后）", ncand);
         }
-    }
-    else if (extract_service(info.data, auth_service(), svc, sizeof svc) && svc[0])
-    {
-        snprintf(service, sizeof service, "%s", svc);
-        LOG_INFO("运营商: pageInfo option 命中 -> value \"%s\"", service);
     }
     else
     {
-        LOG_INFO("运营商: 未能获取运营商列表，沿用 \"%s\"", service);
+        snprintf(cands[ncand++], sizeof cands[0], "%s", auth_service());
+        LOG_WARN("运营商: 未能获取列表，沿用 \"%s\"", auth_service());
     }
-    /* 记录本次实际使用的运营商（探测命中/沿用配置），供运营商自愈写回判断 */
-    snprintf(g_last_service, sizeof g_last_service, "%s", service);
 
     /* 4. 提取 mac，按需 RSA 加密密码 */
     char mac[64] = "";
@@ -494,63 +548,88 @@ static int login_impl(int force, int known_offline)
     LOG_WARN("USE_ENCRYPT=0：本次明文提交密码（仅供调试）");
 #endif
 
-    /* 5. 提交登录 */
-    svc_enc = urlencode(service);
-    if (!svc_enc) goto done;
-    size_t lbsz = strlen(auth_user()) + strlen(pwd_sub) + strlen(svc_enc)
-        + strlen(qs_enc) + 256;
-    lb = malloc(lbsz);
-    if (!lb) goto done;
-    snprintf(lb, lbsz,
-             "userId=%s&password=%s&service=%s&queryString=%s"
-             "&operatorPwd=&operatorUserId=&validcode=&passwordEncrypt=%s",
-             auth_user(), pwd_sub, svc_enc, qs_enc, enc ? "true" : "false");
-
-    if (g_dry_run)
+    /* 5. 提交登录：逐个候选尝试（配置为空时列表全量候选；成功即止并写回） */
+    int login_ok = 0;
+    for (int ci = 0; ci < ncand && !login_ok; ci++)
     {
-        log_form(LOG_LEVEL_INFO, "将提交的表单(dry-run):", lb);
-        LOG_INFO("dry-run: 探测/取公钥/加密均已完成，未提交登录");
-        ret = 0;
-        goto done;
-    }
+        snprintf(service, sizeof service, "%s", cands[ci]);
+        snprintf(g_last_service, sizeof g_last_service, "%s", service);
+        free(svc_enc);
+        free(lb);
+        free(resp.data);
+        resp.data = NULL;
+        svc_enc = urlencode(service);
+        if (!svc_enc) goto done;
+        size_t lbsz = strlen(auth_user()) + strlen(pwd_sub) + strlen(svc_enc)
+            + strlen(qs_enc) + 256;
+        lb = malloc(lbsz);
+        if (!lb) goto done;
+        snprintf(lb, lbsz,
+                 "userId=%s&password=%s&service=%s&queryString=%s"
+                 "&operatorPwd=&operatorUserId=&validcode=&passwordEncrypt=%s",
+                 auth_user(), pwd_sub, svc_enc, qs_enc, enc ? "true" : "false");
 
-    log_form(LOG_LEVEL_DEBUG, "提交登录表单:", lb);
-    if (!portal_endpoint(url, sizeof url, "login")) goto done;
-    code = http_req(url, lb, referer, &resp); /* 浏览器登录时同源 XHR 必带 Referer */
-    if (code < 0 || !resp.data || !resp.data[0])
-    {
-        LOG_ERROR("login 请求失败 (HTTP %ld)", code);
-        if (resp.data) LOG_ERROR("响应内容: %.300s", resp.data);
-        goto done;
-    }
-    if (code != 200)
-        LOG_WARN("login 返回 HTTP %ld，继续按响应内容解析", code);
-    log_response("login", &resp);
+        if (g_dry_run)
+        {
+            log_form(LOG_LEVEL_INFO, "将提交的表单(dry-run):", lb);
+            LOG_INFO("dry-run: 探测/取公钥/加密均已完成，未提交登录");
+            ret = 0;
+            goto done;
+        }
 
-    /* 6. 提取 userIndex 并落盘（供 logout/reauth 使用） */
-    char ui[1024] = "";
-    extract_field(resp.data, "userIndex", ui, sizeof ui);
-    if (!ui[0])
-    {
+        log_form(LOG_LEVEL_DEBUG, "提交登录表单:", lb);
+        if (!portal_endpoint(url, sizeof url, "login")) goto done;
+        code = http_req(url, lb, referer, &resp); /* 浏览器登录时同源 XHR 必带 Referer */
+        if (code < 0 || !resp.data || !resp.data[0])
+        {
+            LOG_ERROR("login 请求失败 (HTTP %ld)", code);
+            if (resp.data) LOG_ERROR("响应内容: %.300s", resp.data);
+            goto done; /* 网络错误与运营商无关，不做候选重试 */
+        }
+        if (code != 200)
+            LOG_WARN("login 返回 HTTP %ld，继续按响应内容解析", code);
+        log_response("login", &resp);
+
+        /* 6. 提取 userIndex：有 = 该运营商认证成功 */
+        char ui[1024] = "";
+        extract_field(resp.data, "userIndex", ui, sizeof ui);
+        if (ui[0])
+        {
+            if (ncand > 1)
+                LOG_INFO("运营商 \"%s\" 认证成功（第 %d/%d 个候选）",
+                         service, ci + 1, ncand);
+            if (state_write(UI_FILE, ui))
+            {
+                char path[600];
+                if (state_path(path, sizeof path, UI_FILE))
+                    LOG_INFO("userIndex 已保存: %s", path);
+            }
+            else
+            {
+                LOG_WARN("userIndex 未写入状态目录，后续 logout 需要手动传 index");
+            }
+            /* 显示原始 hex（与提交给服务端的值一致）；要解码形式用 `userindex` 子命令 */
+            printf("认证成功！ userIndex: %s\n", ui);
+            ret = 0;
+            login_ok = 1;
+            break;
+        }
+        /* 该候选被拒：还有候选就继续试，没有则整体失败 */
         char msg[256] = "";
         extract_field(resp.data, "message", msg, sizeof msg);
-        LOG_ERROR("认证失败: %s", msg[0] ? msg : "(响应里没有 userIndex)");
-        LOG_ERROR("响应内容: %.300s", resp.data);
-        goto done;
+        if (ci + 1 < ncand)
+            LOG_WARN("运营商 \"%s\" 被拒（%s），尝试下一个候选",
+                     service, msg[0] ? msg : "未知原因");
+        else
+        {
+            LOG_ERROR("认证失败: %s", msg[0] ? msg : "(响应里没有 userIndex)");
+            LOG_ERROR("响应内容: %.300s", resp.data);
+            goto done;
+        }
     }
-    if (state_write(UI_FILE, ui))
-    {
-        char path[600];
-        if (state_path(path, sizeof path, UI_FILE))
-            LOG_INFO("userIndex 已保存: %s", path);
-    }
-    else
-    {
-        LOG_WARN("userIndex 未写入状态目录，后续 logout 需要手动传 index");
-    }
-    /* 显示原始 hex（与提交给服务端的值一致）；要解码形式用 `userindex` 子命令 */
-    printf("认证成功！ userIndex: %s\n", ui);
-    ret = 0;
+    if (!login_ok)
+        goto done; /* 全部候选未成功（防御：正常路径上面已处理） */
+
 
 done:
     free(lb);

@@ -1130,6 +1130,59 @@ EOF
     fi
 fi
 
+# --------------------------------------------------- 3.19 运营商逐项尝试 + 规避词表
 echo
+echo "== 3.19 运营商自愈：配置留空时逐个尝试列表（规避词表排后） =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    GPORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/g_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$GPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$GPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-avoid"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/g_override.h" \
+            -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/avoid_cc.err"; then
+        # 场景：账号只绑定了"中国电信"（svc= 参数模拟）；服务端列表校园网在首；
+        # 配置 service= 留空 -> 逐项尝试：校园网被拒、中国移动被拒、中国电信成功并写回
+        python3 "$ROOT/tests/mock_ac.py" "$GPORT" "$PWD_TEST" "$TMP/g_log.json" "$TMP/key.txt" \
+            "校园网@中国移动@中国电信" "svc=中国电信" >/dev/null 2>&1 &
+        G_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$GPORT))==0 else 1)" && break
+            sleep 0.1
+        done
+        printf 'user=testuser\npassword=%s\nservice=\n' "$PWD_TEST" > "$TMP/avoid.conf"
+        ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/avoid.conf" --state-dir "$TMP/state-avoid" ) \
+            >"$TMP/avoid_a.out" 2>"$TMP/avoid_a.err"
+        grep -q "认证成功" "$TMP/avoid_a.out" \
+            && ok "逐项 A: 绑电信+配置留空 -> 逐项尝试后认证成功" \
+            || bad "逐项 A: 应最终成功" "含「认证成功」" "$(cat "$TMP/avoid_a.out" "$TMP/avoid_a.err")"
+        NFAIL=$(grep -c "尝试下一个候选" "$TMP/avoid_a.err")
+        [ "$NFAIL" = "1" ] \
+            && ok "逐项 A: 中国移动被拒一次后命中电信（校园网被规避置后未轮到）" \
+            || bad "逐项 A: 重试次数不对" "1 次" "$NFAIL"
+        grep -q '^service=中国电信$' "$TMP/avoid.conf" \
+            && ok "逐项 A: 成功的运营商已写回配置" \
+            || bad "逐项 A: 写回值不对" "service=中国电信" "$(grep '^service' "$TMP/avoid.conf" 2>/dev/null)"
+
+        # 场景 B：再次 reauth -> 配置已精确命中，一次成功（自愈生效）
+        ( cd "$TMP" && "$TMP/cqie-under-test" reauth --config "$TMP/avoid.conf" --state-dir "$TMP/state-avoid" ) \
+            >"$TMP/avoid_b.out" 2>"$TMP/avoid_b.err"
+        [ "$(grep -c '尝试下一个候选' "$TMP/avoid_b.err")" = "0" ] \
+            && grep -q "认证成功" "$TMP/avoid_b.out" \
+            && ok "逐项 B: 写回后再次认证直接命中，无重试" \
+            || bad "逐项 B: 不应有重试" "一次成功" "$(grep -c '尝试下一个' "$TMP/avoid_b.err")"
+        kill $G_MOCK 2>/dev/null
+    else
+        bad "规避: 编译失败" "编译通过" "$(head -3 "$TMP/avoid_cc.err")"
+    fi
+fi
 echo "==================== 结果：通过 $PASS 项，失败 $FAIL 项 ===================="
 [ "$FAIL" -eq 0 ]

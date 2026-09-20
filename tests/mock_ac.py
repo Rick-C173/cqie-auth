@@ -28,6 +28,8 @@ KEYFILE = sys.argv[4]
 MAC = "4f3839eba7a850e699faecafa73feb81"  # 与 check.sh 中劫持页里的一致
 CHUNK = 126  # 客户端每块 126 字节
 REDIRECT_ENABLED = "noredirect" not in sys.argv[5:]  # 见用法第 5 参
+# 自定义运营商列表：第 6 参传 "A@B@C"（默认 中国移动@校园网@中国电信）
+SERVICES = next((a for a in sys.argv[5:] if "@" in a), "中国移动@校园网@中国电信")
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=1024)
 NUM = KEY.private_numbers()
@@ -154,7 +156,7 @@ class Handler(BaseHTTPRequestHandler):
                 "username": form.get("username", [""])[0],
                 "search": form.get("search", [""])[0],
             }
-            self._send('"中国移动@校园网@中国电信"', "text/html; charset=UTF-8")
+            self._send('"' + SERVICES + '"', "text/html; charset=UTF-8")
             self._dump()
             return
 
@@ -171,9 +173,10 @@ class Handler(BaseHTTPRequestHandler):
                 plain, err = decrypt_pwd(pwd)
                 expect = "%s>%s" % (EXPECT_PWD, MAC)
             ok = plain == expect
+            svc = form.get("service", [""])[0]
             LOG["login"] = {
                 "userId": form.get("userId", [""])[0],
-                "service": form.get("service", [""])[0],
+                "service": svc,
                 "client_ip": self.client_address[0],
                 "passwordEncrypt": enc_flag,
                 "password": pwd,
@@ -184,11 +187,17 @@ class Handler(BaseHTTPRequestHandler):
                 "match": ok,
                 "referer": self.headers.get("Referer"),
             }
+            # 可选参数 svc=NAME：模拟"账号只绑定了该运营商"——提交其它运营商被拒
+            expect_svc = next((a[4:] for a in sys.argv[5:] if a.startswith("svc=")), "")
+            svc_ok = (not expect_svc) or svc == expect_svc
+            ok = ok and svc_ok
+            fail_msg = "密码错误" if not (plain == expect) else (
+                "运营商未绑定" if not svc_ok else "认证成功")
             user_index = "6e6f6465313233343536" if ok else ""
             self._send(json.dumps({
                 "result": "success" if ok else "fail",
                 "userIndex": user_index,
-                "message": "认证成功" if ok else "密码错误",
+                "message": "认证成功" if ok else fail_msg,
             }, ensure_ascii=False))
             self._dump()
             return
