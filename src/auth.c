@@ -29,6 +29,7 @@ void auth_set_plain(int on) { g_plain = on; }
 /* ---- 运行期凭据（配置文件读取后注入；宏为编译期兜底，发布版默认空）---- */
 static char g_user[128] = "", g_pass[256] = "", g_service[128] = "";
 static char g_last_service[256] = ""; /* login 实际使用的运营商（探测命中或沿用配置） */
+static char g_probe[512] = "";        /* 运行期探测地址（向导/配置文件 probe= 注入） */
 
 void auth_set_credentials(const char* user, const char* pass, const char* service)
 {
@@ -42,6 +43,53 @@ const char* auth_user(void) { return g_user[0] ? g_user : USER_ID; }
 const char* auth_password(void) { return g_pass[0] ? g_pass : PASSWORD; }
 const char* auth_service(void) { return g_service[0] ? g_service : SERVICE_NAME; }
 const char* auth_last_service(void) { return g_last_service; }
+
+void auth_set_probe(const char* url)
+{
+    snprintf(g_probe, sizeof g_probe, "%s", url ? url : "");
+}
+
+/* 生效的探测地址：运行期 probe= > 编译期 PROBE_URL */
+static const char* probe_url(void)
+{
+    return g_probe[0] ? g_probe : PROBE_URL;
+}
+
+/*
+ * 通过探测地址发现认证配置（向导用）：
+ * 请求探测地址触发 AC 劫持，从认证页跳转 URL 提取 portal 基址（本次会话
+ * 立即生效）并拉取运营商列表。成功返回 1。
+ */
+static int fetch_services(const char* qs, const char* referer, char* out, size_t outsz);
+
+int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t lsz)
+{
+    http_buf probe = {0};
+    long code = http_req_ex(probe_url(), NULL, NULL, HTTP_QUIET, &probe);
+    int ok = 0;
+    char* redir = (code >= 0 && probe.data && probe.data[0])
+                      ? fetch_redirect_url(probe.data) : NULL;
+    if (redir && *redir)
+    {
+        /* portal 基址 = 认证页 URL 截断 /index.jsp 之前 */
+        const char* cut = strstr(redir, "/index.jsp");
+        size_t len = cut ? (size_t)(cut - redir) : strlen(redir);
+        size_t c = len < psz - 1 ? len : psz - 1;
+        memcpy(portal_out, redir, c);
+        portal_out[c] = 0;
+        auth_set_portal(portal_out); /* 发现即生效 */
+        char qs[2048] = "";
+        char* q = strchr(redir, '?');
+        if (q && q[1]) snprintf(qs, sizeof qs, "%s", q + 1);
+        list_out[0] = 0;
+        if (qs[0])
+            fetch_services(qs, portal_out, list_out, lsz);
+        ok = 1;
+    }
+    free(redir);
+    free(probe.data);
+    return ok;
+}
 
 static const char* portal(void) { return g_portal ? g_portal : PORTAL_URL; }
 
@@ -408,8 +456,8 @@ static int login_impl(int force, int known_offline)
         LOG_INFO("提示: 当前已在线，AC 一般不会下发劫持页，可能拿不到 queryString");
 
     /* 2. 抓劫持认证页，取 location.href（原脚本此处 2>/dev/null 静默失败） */
-    LOG_DEBUG("探测 %s", PROBE_URL);
-    http_req_ex(PROBE_URL, NULL, NULL, HTTP_QUIET, &probe);
+    LOG_DEBUG("探测 %s", probe_url());
+    http_req_ex(probe_url(), NULL, NULL, HTTP_QUIET, &probe);
     LOG_DEBUG("探测页 %zu 字节", probe.len);
     redir = probe.data ? fetch_redirect_url(probe.data) : NULL;
     if (!redir || !*redir)

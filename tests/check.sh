@@ -836,8 +836,9 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
             sleep 0.1
         done
 
-        # --setup + 管道输入：向导生成配置文件并当场继续登录（运营商留空=自动探测）
-        ( cd "$TMP" && printf 'wizuser\n%s\n%s\n\n' "$PWD_TEST" "$PWD_TEST" \
+        # --setup + 管道输入：向导生成配置（密码一次 + 跳转地址回车 + 路径回车
+        # + portal 确认回车 + 运营商回车=自动），命令即验证：登录成功后才写盘
+        ( cd "$TMP" && printf 'wizuser\n%s\n\n\n\n' "$PWD_TEST" \
           | "$TMP/cqie-under-test" login --setup --config "$TMP/wizard.conf" --state-dir "$TMP/state-wizard" ) \
             >"$TMP/wiz.out" 2>"$TMP/wiz.err"
         grep -q "已写入" "$TMP/wiz.out" \
@@ -880,6 +881,16 @@ else
 EOF
     if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s2_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/s2_cc.err"; then
+        # mock 提前启动：场景 B 的"命令即验证"需要在线 mock
+        python3 "$ROOT/tests/mock_ac.py" "$S2PORT" "$PWD_TEST" "$TMP/s2_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        S2_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
+            sleep 0.1
+        done
         # 场景 A：stdin 直接 EOF（管道空输入）-> 向导中止，不写文件，exit 1
         ( cd "$TMP" && printf '' | "$TMP/cqie-under-test" login --setup --config "$TMP/eof.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/eof.out" 2>"$TMP/eof.err"
@@ -888,9 +899,10 @@ EOF
             && ok "EOF A: 输入立即结束时向导中止（exit 1，未写文件，无死循环）" \
             || bad "EOF A: 应中止且不写文件" "exit=1 含「向导中止」" "exit=$RTE $(tail -2 "$TMP/eof.out")"
 
-        # 场景 B：cqie-auth --setup 单独运行（无命令）-> 写配置成功，exit 0
+        # 场景 B：cqie-auth --setup 单独运行（无命令）-> 实测验证通过后写配置，exit 0
         # 配置路径指向不存在的嵌套目录，顺带验证父目录自动创建
-        ( cd "$TMP" && printf 's2user\n%s\n%s\n校园网\n' "$PWD_TEST" "$PWD_TEST" \
+        # 喂入：user/密码/跳转回车/路径回车/运营商=校园网（5 行）
+        ( cd "$TMP" && printf 's2user\n%s\n\n\n\n校园网\n' "$PWD_TEST" \
           | "$TMP/cqie-under-test" --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2.out" 2>"$TMP/s2.err"
         RTS=$?
@@ -902,16 +914,7 @@ EOF
             && ok "--setup 独立运行: 配置文件内容正确（含父目录自动创建）" \
             || bad "--setup 独立运行: 配置文件不对" "deep/nested/s2.conf 含 user=s2user" "$(head -1 "$TMP/deep/nested/s2.conf" 2>/dev/null)"
 
-        # 场景 C：写完的配置立刻可用（login 读它认证成功）
-        python3 "$ROOT/tests/mock_ac.py" "$S2PORT" "$PWD_TEST" "$TMP/s2_log.json" "$TMP/key.txt" \
-            >/dev/null 2>&1 &
-        S2_MOCK=$!
-        for _ in $(seq 1 50); do
-            python3 -c "import socket,sys
-s=socket.socket(); s.settimeout(0.2)
-sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
-            sleep 0.1
-        done
+        # 场景 C：写完的配置立刻可用（login 读它认证成功；复用场景 B 的 mock）
         ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2_login.out" 2>"$TMP/s2_login.err"
         grep -q "认证成功" "$TMP/s2_login.out" \
@@ -1241,6 +1244,53 @@ EOF
         fi
     else
         bad "状态: 编译失败" "编译通过" "$(head -3 "$TMP/status_cc.err")"
+    fi
+fi
+
+# --------------------------------------------------- 3.21 向导验证失败不写盘 + 重试
+echo
+echo "== 3.21 命令即验证：失败不写盘，重试成功才写盘 =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    YPORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/y_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$YPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$YPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-y"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/y_override.h" \
+            -o "$TMP/cqie-y" "$ROOT"/src/*.c 2>"$TMP/y_cc.err"; then
+        python3 "$ROOT/tests/mock_ac.py" "$YPORT" "$PWD_TEST" "$TMP/y_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        Y_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$YPORT))==0 else 1)" && break
+            sleep 0.1
+        done
+        # 第一轮：错误密码 -> 验证失败 -> 不写盘；答 y 重试；第二轮正确密码 -> 成功写盘
+        ( cd "$TMP" && printf 'wizuser\nwrongpass\n\n\n\ny\n\n%s\n\n\n\n' "$PWD_TEST" \
+          | "$TMP/cqie-y" login --setup --config "$TMP/y.conf" --state-dir "$TMP/state-y" ) \
+            >"$TMP/y.out" 2>"$TMP/y.err"
+        grep -q "凭据未保存（验证失败）" "$TMP/y.out" \
+            && ok "验证 A: 错误密码被拒绝并提示重试" \
+            || bad "验证 A: 应提示验证失败" "out 含「凭据未保存」" "$(tail -3 "$TMP/y.out")"
+        # 失败不写盘的证据：最终写入的是重试后的正确密码（第一轮错误密码未被写入）
+        grep -q "认证成功" "$TMP/y.out" && grep -q "配置已保存" "$TMP/y.out" \
+            && ok "验证 A: 重试成功后配置写入" \
+            || bad "验证 A: 重试应成功并写盘" "含「认证成功」「配置已保存」" "$(cat "$TMP/y.out")"
+        grep -q '^password=test-pass-123$' "$TMP/y.conf" \
+            && ! grep -q 'wrongpass' "$TMP/y.conf" \
+            && ok "验证 A: 写入的是重试后的正确密码（错误密码未落盘）" \
+            || bad "验证 A: 密码行不对" "password=test-pass-123 且无 wrongpass" "$(grep 'password\|wrong' "$TMP/y.conf" 2>/dev/null)"
+        kill $Y_MOCK 2>/dev/null
+    else
+        bad "验证: 编译失败" "编译通过" "$(head -3 "$TMP/y_cc.err")"
     fi
 fi
 

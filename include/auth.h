@@ -4,15 +4,27 @@
 #ifndef AUTH_H
 #define AUTH_H
 
+#include <stddef.h>
+
 /*
  * 运行期覆盖项（来自命令行），不设置则用 config.h 里的编译期默认值。
  * portal_url 传 NULL 或空串表示恢复默认。
  */
 void auth_set_portal(const char* portal_url);
+/* 运行期覆盖探测地址（向导/配置文件 probe= 注入）；NULL/空 = 恢复编译期默认 */
+void auth_set_probe(const char* url);
 void auth_set_dry_run(int on);
 /* --plain：跳过 RSA 加密，密码明文提交（passwordEncrypt=false）。
  * 仅 USE_ENCRYPT=1 编译时有意义；USE_ENCRYPT=0 时本来就走明文。 */
 void auth_set_plain(int on);
+
+/*
+ * 通过探测地址发现认证配置（首次设置向导用）：
+ * 请求探测地址触发 AC 劫持，从认证页跳转 URL 提取 portal 基址（本次会话
+ * 立即生效）并拉取运营商列表。成功返回 1（portal_out=认证基址，
+ * list_out="A@B@C" 运营商列表）；失败返回 0（不在校园网/探测地址不可用）。
+ */
+int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t lsz);
 
 /*
  * 运行期凭据（来自配置文件）：user/password/service 三项，传 NULL/空串

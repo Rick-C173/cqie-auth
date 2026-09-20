@@ -137,7 +137,7 @@ static void usage(FILE* out, const char* argv0)
  * 把探测到的运营商写回配置文件（自愈）：保留其余行与注释，仅替换/追加
  * service= 行；临时文件 + rename 原子写，权限 0600。成功返回 1。
  */
-static int config_update_service(const char* path, const char* svc)
+static int config_update_key(const char* path, const char* key, const char* val)
 {
     char body[4096] = "";
     int replaced = 0;
@@ -149,14 +149,14 @@ static int config_update_service(const char* path, const char* svc)
         {
             const char* p = line;
             while (*p == ' ' || *p == '\t') p++;
-            if (!replaced && strncmp(p, "service", 7) == 0)
+            if (!replaced && strncmp(p, key, strlen(key)) == 0)
             {
-                const char* q = p + 7;
+                const char* q = p + strlen(key);
                 while (*q == ' ' || *q == '\t') q++;
                 if (*q == '=' || *q == '\n' || *q == 0)
                 {
                     char add[600];
-                    snprintf(add, sizeof add, "service=%s\n", svc);
+                    snprintf(add, sizeof add, "%s=%s\n", key, val);
                     if (strlen(body) + strlen(add) >= sizeof body) { fclose(in); return 0; }
                     strcat(body, add);
                     replaced = 1;
@@ -173,7 +173,7 @@ static int config_update_service(const char* path, const char* svc)
         size_t n = strlen(body);
         char add[600];
         if (n && body[n - 1] != '\n') strcat(body, "\n");
-        snprintf(add, sizeof add, "service=%s\n", svc);
+        snprintf(add, sizeof add, "%s=%s\n", key, val);
         if (strlen(body) + strlen(add) >= sizeof body) return 0;
         strcat(body, add);
     }
@@ -253,84 +253,121 @@ static void make_parent_dirs(const char* path)
  * cur_portal 为现有配置的 portal=（非空则原样保留写入）。
  * 文件已存在时确认后才覆盖。返回 1=已写入，0=取消/EOF/写失败。
  */
-static int setup_wizard(const char* path, char* user, size_t usz,
-                        char* pass, size_t psz, char* svc, size_t ssz,
-                        const char* cur_portal)
+/* ---- 首次设置向导：收集（含探测）与写盘分离，凭据验证由命令本身完成 ---- */
+
+struct WizardOut
 {
-    printf("首次设置：生成凭据配置文件 %s\n", path);
+    char user[128], pass[256], svc[128];
+    char portal[256]; /* 探测发现/用户确认的认证地址；空=沿用默认 */
+    char probe[512];  /* 用户指定的探测地址；空=沿用默认 */
+    char path[600];   /* 配置文件路径 */
+    int skip_verify;  /* 已在线：不做在线验证直接写盘 */
+};
 
-    while (!user[0])
-    {
-        printf("用户名: ");
-        fflush(stdout);
-        if (!read_line(user, usz, 0))
-        {
-            printf("\n输入已结束，向导中止（未写入任何内容）。\n");
-            return 0;
-        }
-    }
-
-    for (;;)
-    {
-        char pass2[256] = "";
-        printf("密码 (不回显): ");
-        fflush(stdout);
-        if (!read_line(pass, psz, 1))
-        {
-            printf("\n输入已结束，向导中止（未写入任何内容）。\n");
-            return 0;
-        }
-        printf("再输一遍: ");
-        fflush(stdout);
-        if (!read_line(pass2, sizeof pass2, 1))
-        {
-            printf("\n输入已结束，向导中止（未写入任何内容）。\n");
-            return 0;
-        }
-        if (pass[0] && strcmp(pass, pass2) == 0) break;
-        printf("两次输入不一致或为空，请重新输入。\n");
-    }
-
-    printf("运营商名 (直接回车=自动探测): ");
-    fflush(stdout);
-    if (!read_line(svc, ssz, 0)) svc[0] = 0; /* EOF 按留空处理 */
-
-    FILE* probe = fopen(path, "r");
+/* 把收集结果写入配置文件（0600）。文件已存在时确认后才覆盖。返回 1=已写入。 */
+static int write_config_file(const struct WizardOut* w)
+{
+    FILE* probe = fopen(w->path, "r");
     if (probe)
     {
         fclose(probe);
         printf("配置文件已存在，覆盖? (y/N): ");
         fflush(stdout);
         char ans[16] = "";
-        read_line(ans, sizeof ans, 0); /* EOF 按默认 N，不覆盖 */
+        read_line(ans, sizeof ans, 0);
         if (ans[0] != 'y' && ans[0] != 'Y')
         {
             printf("已取消，未写入。\n");
             return 0;
         }
     }
-
-    make_parent_dirs(path);
-    FILE* f = fopen(path, "w");
+    make_parent_dirs(w->path);
+    FILE* f = fopen(w->path, "w");
     if (!f)
     {
-        fprintf(stderr, "无法写入 %s（权限不足？可用 --config 指定其它路径）\n", path);
+        fprintf(stderr, "无法写入 %s（权限不足？可用 --config 指定其它路径）\n", w->path);
         return 0;
     }
     fprintf(f,
             "# cqie-auth 凭据配置（key=value，# 注释；示例见 cqie-auth.conf.example）\n"
-            "# service 留空 = 自动探测运营商；建议本文件权限 600\n");
-    if (cur_portal && cur_portal[0])
-        fprintf(f, "portal=%s\n", cur_portal);
-    fprintf(f, "user=%s\npassword=%s\nservice=%s\n", user, pass, svc);
+            "# service 留空 = 自动逐项尝试运营商并写回；建议本文件权限 600\n");
+    if (w->portal[0]) fprintf(f, "portal=%s\n", w->portal);
+    if (w->probe[0]) fprintf(f, "probe=%s\n", w->probe);
+    fprintf(f, "user=%s\npassword=%s\nservice=%s\n", w->user, w->pass, w->svc);
     fclose(f);
 #ifndef _WIN32
-    chmod(path, 0600); /* 凭据文件只允许属主读写 */
-    printf("已写入 %s (权限 600)\n", path);
+    chmod(w->path, 0600); /* 凭据文件只允许属主读写 */
+    printf("已写入 %s (权限 600)\n", w->path);
 #else
-    printf("已写入 %s\n", path);
+    printf("已写入 %s\n", w->path);
 #endif
     return 1;
+}
+
+/*
+ * 向导收集：提问 + 当场探测（发现认证地址与运营商列表，展示供确认/参考）。
+ * 不写盘——凭据验证由后续命令本身完成。预填值来自上次尝试（重试场景）。
+ * 返回 1=收集完成，0=EOF/取消。
+ */
+static int wizard_collect(struct WizardOut* w, const char* def_probe)
+{
+    printf("首次设置：收集认证信息（完成后实测验证，通过才写入配置）\n");
+
+    while (!w->user[0])
+    {
+        printf("用户名: ");
+        fflush(stdout);
+        if (!read_line(w->user, sizeof w->user, 0)) goto eof;
+    }
+
+    for (;;)
+    {
+        printf("密码 (不回显): ");
+        fflush(stdout);
+        if (!read_line(w->pass, sizeof w->pass, 1)) goto eof;
+        if (w->pass[0]) break;
+        printf("密码不能为空。\n");
+    }
+
+    printf("探测地址 (回车=%s)：用于触发校园网认证页\n", def_probe);
+    {
+        char tmp[512] = "";
+        if (!read_line(tmp, sizeof tmp, 0)) goto eof;
+        if (tmp[0]) snprintf(w->probe, sizeof w->probe, "%s", tmp);
+    }
+
+    printf("配置文件路径 (回车=%s): ", w->path);
+    fflush(stdout);
+    {
+        char tmp[600] = "";
+        if (!read_line(tmp, sizeof tmp, 0)) goto eof;
+        if (tmp[0]) snprintf(w->path, sizeof w->path, "%s", tmp);
+    }
+
+    /* 已在线：无法用登录验证凭据，询问是否直接写入 */
+    if (is_online())
+    {
+        printf("当前已在线（能直接上外网），凭据将不做在线验证直接写入。确认? (y/N): ");
+        fflush(stdout);
+        char ans[16] = "";
+        if (!read_line(ans, sizeof ans, 0)) goto eof;
+        if (ans[0] != 'y' && ans[0] != 'Y')
+        {
+            printf("已取消。\n");
+            return 0;
+        }
+        w->skip_verify = 1;
+        return 1;
+    }
+
+    printf("运营商名 (回车=留空，登录时自动逐项尝试): ");
+    fflush(stdout);
+    if (!read_line(w->svc, sizeof w->svc, 0)) goto eof;
+    return 1;
+
+eof:
+    printf("\n输入已结束，向导中止（未写入任何内容）。\n");
+    return 0;
 }
 
 /* 取 --opt value / --opt=value 的值，没有则返回 NULL */
@@ -354,7 +391,8 @@ static int load_config_file(const char* path,
                             char* user, size_t usz,
                             char* pass, size_t psz,
                             char* svc, size_t ssz,
-                            char* portal_buf, size_t plsz)
+                            char* portal_buf, size_t plsz,
+                            char* probe_buf, size_t pbsz)
 {
     FILE* fp = fopen(path, "r");
     if (!fp) return 0;
@@ -389,6 +427,7 @@ static int load_config_file(const char* path,
         else if (!strcmp(k, "password")) snprintf(pass, psz, "%s", v);
         else if (!strcmp(k, "service")) snprintf(svc, ssz, "%s", v);
         else if (!strcmp(k, "portal")) snprintf(portal_buf, plsz, "%s", v);
+        else if (!strcmp(k, "probe")) snprintf(probe_buf, pbsz, "%s", v);
         /* 其余键忽略：允许用户加自定义备注行 */
     }
     fclose(fp);
@@ -525,15 +564,52 @@ int main(int argc, char** argv)
              * 现有配置值作为预填默认，完成后提示运行 login。 */
             const char* p = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
             if (!p) p = CONFIG_FILE;
-            char wu[128] = "", wp[256] = "", ws[128] = "", wportal[256] = "";
-            load_config_file(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws,
-                             wportal, sizeof wportal);
-            if (setup_wizard(p, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws, wportal))
+            struct WizardOut W;
+            memset(&W, 0, sizeof W);
+            snprintf(W.path, sizeof W.path, "%s", p);
+            load_config_file(p, W.user, sizeof W.user, W.pass, sizeof W.pass,
+                             W.svc, sizeof W.svc, W.portal, sizeof W.portal,
+                             W.probe, sizeof W.probe);
+            for (;;)
             {
-                printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
-                return 0;
+                W.pass[0] = 0; /* 密码每轮必输 */
+                if (!wizard_collect(&W, PROBE_URL))
+                    return 1; /* EOF/取消 */
+                auth_set_credentials(W.user, W.pass, W.svc);
+                auth_set_portal(W.portal[0] ? W.portal : NULL);
+                auth_set_probe(W.probe[0] ? W.probe : NULL);
+                if (W.skip_verify)
+                {
+                    if (write_config_file(&W))
+                    {
+                        printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
+                        return 0;
+                    }
+                    return 1;
+                }
+                state_init(state_opt);
+                auth_set_dry_run(0);
+                if (iface && http_set_source_ip(iface) == 0)
+                    ; /* --interface 传了就生效；无效值静默忽略（向导场景少见） */
+                int r = cmd_login(1); /* force：强制重认证作为凭据实测 */
+                auth_session_unlock();
+                if (r == 0)
+                {
+                    if (auth_last_service()[0])
+                        snprintf(W.svc, sizeof W.svc, "%s", auth_last_service());
+                    if (write_config_file(&W))
+                    {
+                        printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
+                        return 0;
+                    }
+                    return 1;
+                }
+                printf("凭据未写入（验证失败）。重新输入? (y/N): ");
+                fflush(stdout);
+                char ans[16] = "";
+                if (!read_line(ans, sizeof ans, 0) || (ans[0] != 'y' && ans[0] != 'Y'))
+                    return 1;
             }
-            return 1; /* 取消/EOF/写失败 */
         }
         usage(stderr, argv[0]);
         return 2;
@@ -580,13 +656,15 @@ int main(int argc, char** argv)
     if (!cfg_path) cfg_path = CONFIG_FILE;
     char cfg_svc_raw[128] = ""; /* 配置文件里的原始 service 值（写回自愈的基准） */
     char cfg_portal[256] = "";  /* 配置文件里的 portal=（可选，覆盖编译期默认） */
+    char cfg_probe[512] = "";   /* 配置文件里的 probe=（可选，覆盖编译期默认） */
+    char cfg_user[128] = "", cfg_pass[256] = ""; /* 向导重试预填用 */
     {
-        char cfg_user[128] = "", cfg_pass[256] = "", cfg_svc[128] = "";
+        char cfg_svc[128] = "";
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
         /* --setup 时允许文件不存在——向导就是要创建它 */
         if (load_config_file(cfg_path, cfg_user, sizeof cfg_user,
                              cfg_pass, sizeof cfg_pass, cfg_svc, sizeof cfg_svc,
-                             cfg_portal, sizeof cfg_portal))
+                             cfg_portal, sizeof cfg_portal, cfg_probe, sizeof cfg_probe))
         {
             LOG_DEBUG("凭据配置: %s", cfg_path);
         }
@@ -605,35 +683,31 @@ int main(int argc, char** argv)
     }
 
     /* 首次运行向导触发：
-     * - 显式 --setup：总是运行（重新配置，覆盖前有确认）
-     * - 否则：凭据缺失 + login/reauth + 交互终端（cron/管道非终端不触发） */
-    int wiz_attempted = 0, wiz_ok = 0;
-    if (setup || ((auth_user()[0] == 0 || auth_password()[0] == 0) &&
-                  compat_stdin_is_tty() &&
-                  (!strcmp(cmd, "login") || !strcmp(cmd, "reauth"))))
-    {
-        wiz_attempted = 1;
-        char wu[128] = "", wp[256] = "", ws[128] = "";
-        /* 已有的部分值（如 -u 给了账号）作为默认带入，只补缺失项 */
-        snprintf(wu, sizeof wu, "%s", auth_user());
-        snprintf(wp, sizeof wp, "%s", auth_password());
-        wiz_ok = setup_wizard(cfg_path, wu, sizeof wu, wp, sizeof wp, ws, sizeof ws,
-                              cfg_portal);
-        if (wiz_ok) auth_set_credentials(wu, wp, ws); /* 向导值当前最高层 */
-    }
-    /* 向导中止（EOF/取消/写失败）且凭据仍缺失：直接退出，不再跑命令产生二次报错 */
-    if (wiz_attempted && !wiz_ok &&
-        (auth_user()[0] == 0 || auth_password()[0] == 0))
-    {
-        fprintf(stderr, "设置未完成，已退出。\n");
-        return 1;
-    }
+     * - 显式 --setup（带命令）：总是运行
+     * - 否则：凭据缺失 + login/reauth + 交互终端（cron/管道非终端不触发）
+     * 命令即验证：向导只收集不写盘，凭据内存生效后执行命令，成功才写盘 */
+    int need_wizard = (setup ||
+                       (cmd && (auth_user()[0] == 0 || auth_password()[0] == 0) &&
+                        compat_stdin_is_tty() &&
+                        (!strcmp(cmd, "login") || !strcmp(cmd, "reauth"))));
+    struct WizardOut W;
+    memset(&W, 0, sizeof W);
+    snprintf(W.path, sizeof W.path, "%s", cfg_path);
+    /* 重试预填：配置文件已有值 */
+    snprintf(W.user, sizeof W.user, "%s", cfg_user);
+    snprintf(W.pass, sizeof W.pass, "%s", cfg_pass);
+    snprintf(W.svc, sizeof W.svc, "%s", cfg_svc_raw);
+    snprintf(W.portal, sizeof W.portal, "%s", cfg_portal);
+    snprintf(W.probe, sizeof W.probe, "%s", cfg_probe);
+
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");
 
     state_init(state_opt);
-    /* portal 优先级：--portal > 配置文件 portal= > 编译期默认 */
+    /* portal 优先级：--portal > 向导发现/配置文件 portal= > 编译期默认 */
     auth_set_portal(portal_opt ? portal_opt : (cfg_portal[0] ? cfg_portal : NULL));
+    /* probe 优先级：向导输入/配置文件 probe= > 编译期默认 */
+    auth_set_probe(cfg_probe[0] ? cfg_probe : NULL);
     auth_set_dry_run(dry_run);
     auth_set_plain(plain);
     if (iface && http_set_source_ip(iface) != 0)
@@ -644,39 +718,101 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    int ret;
-    if (!strcmp(cmd, "login")) ret = cmd_login(force);
-    else if (!strcmp(cmd, "reauth")) ret = cmd_reauth(arg);
-    else if (!strcmp(cmd, "logout")) ret = cmd_logout(arg);
-    else if (!strcmp(cmd, "status")) ret = cmd_status();
-    else if (!strcmp(cmd, "userindex")) ret = cmd_userindex(arg);
-    else
-    {
-        fprintf(stderr, "未知命令: %s\n\n", cmd);
-        usage(stderr, argv[0]);
-        ret = 2;
-    }
-    auth_session_unlock(); /* 单实例锁随命令结束释放 */
+    int pending_write = 0;
+    int ret = 2;
 
-    /* 运营商自愈写回：login/reauth 成功后，若实际使用的运营商（探测命中）
-     * 与配置文件里的 service 不一致（留空或写错），把正确值写回——下次不再
-     * 依赖探测。显式 --service / CQIE_SERVICE 是临时意图，不写回。 */
-    if (ret == 0 && (!strcmp(cmd, "login") || !strcmp(cmd, "reauth")) &&
-        auth_last_service()[0] && !cli_svc)
+    for (;;)
     {
-        const char* env_svc = getenv("CQIE_SERVICE");
-        const char* eff = auth_last_service();
-        if ((!env_svc || !env_svc[0]) &&
-            (cfg_svc_raw[0] == 0 || strcmp(cfg_svc_raw, eff) != 0))
+        if (need_wizard)
         {
-            if (config_update_service(cfg_path, eff))
-                printf("运营商已写回配置: %s\n", eff);
+            W.pass[0] = 0; /* 密码每轮必输 */
+            if (!wizard_collect(&W, PROBE_URL))
+            {
+                /* EOF/取消：凭据仍缺失则退出，否则按已加载值继续执行命令 */
+                if (auth_user()[0] == 0 || auth_password()[0] == 0)
+                {
+                    fprintf(stderr, "设置未完成，已退出。\n");
+                    return 1;
+                }
+                need_wizard = 0;
+            }
             else
-                fprintf(stderr, "运营商写回配置失败（不影响本次认证）\n");
+            {
+                auth_set_credentials(W.user, W.pass, W.svc);
+                /* --portal 命令行最高优先：向导发现的 portal 不覆盖它 */
+                auth_set_portal(portal_opt ? portal_opt
+                                           : (W.portal[0] ? W.portal : NULL));
+                auth_set_probe(W.probe[0] ? W.probe : NULL);
+                if (W.skip_verify)
+                {
+                    if (write_config_file(&W))
+                        printf("配置已保存: %s\n", W.path);
+                    need_wizard = 0;
+                }
+                else
+                    pending_write = 1;
+            }
         }
+
+        if (!strcmp(cmd, "login")) ret = cmd_login(force);
+        else if (!strcmp(cmd, "reauth")) ret = cmd_reauth(arg);
+        else if (!strcmp(cmd, "logout")) ret = cmd_logout(arg);
+        else if (!strcmp(cmd, "status")) ret = cmd_status();
+        else if (!strcmp(cmd, "userindex")) ret = cmd_userindex(arg);
+        else
+        {
+            fprintf(stderr, "未知命令: %s\n\n", cmd);
+            usage(stderr, argv[0]);
+            ret = 2;
+        }
+        auth_session_unlock(); /* 单实例锁随命令结束释放 */
+
+        /* 运营商自愈写回：非向导路径维持原行为（pending 路径的写盘已含最新值） */
+        if (ret == 0 && !pending_write &&
+            (!strcmp(cmd, "login") || !strcmp(cmd, "reauth")) &&
+            auth_last_service()[0] && !cli_svc)
+        {
+            const char* env_svc = getenv("CQIE_SERVICE");
+            const char* eff = auth_last_service();
+            if ((!env_svc || !env_svc[0]) &&
+                (cfg_svc_raw[0] == 0 || strcmp(cfg_svc_raw, eff) != 0))
+            {
+                if (config_update_key(cfg_path, "service", eff))
+                    printf("运营商已写回配置: %s\n", eff);
+                else
+                    fprintf(stderr, "运营商写回配置失败（不影响本次认证）\n");
+            }
+        }
+
+        if (pending_write)
+        {
+            if (ret == 0)
+            {
+                /* 命令即验证：验证通过，写盘（service 用实际生效值校正） */
+                if (auth_last_service()[0])
+                    snprintf(W.svc, sizeof W.svc, "%s", auth_last_service());
+                if (write_config_file(&W))
+                    printf("配置已保存: %s\n", W.path);
+                pending_write = 0;
+                break;
+            }
+            /* 验证失败：凭据未写盘，询问重试（回向导，旧值预填） */
+            printf("凭据未保存（验证失败）。重新输入? (y/N): ");
+            fflush(stdout);
+            char ans[16] = "";
+            int rl = read_line(ans, sizeof ans, 0);
+            if (!rl || (ans[0] != 'y' && ans[0] != 'Y'))
+            {
+                fprintf(stderr, "未写入任何配置。\n");
+                break;
+            }
+            need_wizard = 1;
+            continue;
+        }
+        break;
     }
 
     log_close();
-    sock_quit(); /* POSIX 下是空操作；Windows 释放 Winsock */
+        sock_quit(); /* POSIX 下是空操作；Windows 释放 Winsock */
     return ret;
 }

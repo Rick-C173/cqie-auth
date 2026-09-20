@@ -81,6 +81,10 @@ service=中国移动
 portal=http://10.253.3.84/eportal
 ```
 
+可选 `probe=` 键覆盖探测地址（默认 `http://123.123.123.123`，HTTP+纯 IP 劫持最可靠；
+留空用默认）。首次运行向导（`login --setup` 或凭据缺失时自动触发）会依次询问
+用户名/密码/探测地址/配置路径，实测验证通过后才写入配置文件——失败不落盘。
+
 示例配置见仓库中的 [cqie-auth.conf.example](cqie-auth.conf.example)。
 
 ```sh
