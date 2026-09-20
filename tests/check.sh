@@ -1184,5 +1184,65 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$GPORT))==0 else 1)" && break
         bad "规避: 编译失败" "编译通过" "$(head -3 "$TMP/avoid_cc.err")"
     fi
 fi
+# --------------------------------------------------- 3.20 status 三态退出码
+echo
+echo "== 3.20 status 三态：0=在线 1=离线 2=不在校园网 =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    TPORT=$((20000 + RANDOM % 20000))
+    cat > "$TMP/t_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:1/eportal"
+#define PROBE_URL       "http://127.0.0.1:$TPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:$TPORT/generate_204"
+#define STATE_DIR       "$TMP/state-status"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/t_override.h" \
+            -o "$TMP/cqie-status" "$ROOT"/src/*.c 2>"$TMP/status_cc.err"; then
+        python3 "$ROOT/tests/mock_ac.py" "$TPORT" "$PWD_TEST" "$TMP/t_log.json" "$TMP/key.txt" \
+            >/dev/null 2>&1 &
+        T_MOCK=$!
+        for _ in $(seq 1 50); do
+            python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$TPORT))==0 else 1)" && break
+            sleep 0.1
+        done
+        # 场景 A：204 探测通过（mock）但 portal 不可达（编译期 127.0.0.1:1）-> exit 2
+        ( cd "$TMP" && "$TMP/cqie-status" status --state-dir "$TMP/state-status" ) \
+            >"$TMP/st_a.out" 2>"$TMP/st_a.err"
+        RTA=$?
+        [ "$RTA" = "2" ] && grep -q "不在校园网" "$TMP/st_a.out" \
+            && ok "状态 A: 能上外网但 portal 不可达 -> exit 2" \
+            || bad "状态 A: 应 exit 2 不在校园网" "exit=2 含「不在校园网」" "exit=$RTA $(cat "$TMP/st_a.out")"
+        kill $T_MOCK 2>/dev/null
+
+        # 场景 B：204 全不通（127.0.0.1:1）-> 离线 exit 1
+        cat > "$TMP/t2_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:1/eportal"
+#define PROBE_URL       "http://127.0.0.1:1/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-status"
+#define USER_ID         "testuser"
+#define PASSWORD        "$PWD_TEST"
+EOF
+        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/t2_override.h" \
+                -o "$TMP/cqie-status2" "$ROOT"/src/*.c 2>"$TMP/status2_cc.err"; then
+            ( cd "$TMP" && "$TMP/cqie-status2" status --state-dir "$TMP/state-status" ) \
+                >"$TMP/st_b.out" 2>"$TMP/st_b.err"
+            RTB=$?
+            [ "$RTB" = "1" ] && grep -q "未在线" "$TMP/st_b.out" \
+                && ok "状态 B: 探测全不通 -> 离线 exit 1" \
+                || bad "状态 B: 应 exit 1 离线" "exit=1 含「未在线」" "exit=$RTB $(cat "$TMP/st_b.out")"
+        else
+            bad "状态 B: 编译失败" "编译通过" "$(head -3 "$TMP/status2_cc.err")"
+        fi
+    else
+        bad "状态: 编译失败" "编译通过" "$(head -3 "$TMP/status_cc.err")"
+    fi
+fi
+
 echo "==================== 结果：通过 $PASS 项，失败 $FAIL 项 ===================="
 [ "$FAIL" -eq 0 ]

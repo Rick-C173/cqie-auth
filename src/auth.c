@@ -296,10 +296,27 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
 
 int cmd_status(void)
 {
+    /* 三态退出码：0=在线 1=离线 2=能上外网但 portal 不可达（不在校园网）。
+     * 旧脚本按布尔判断（0/非 0）仍然兼容。 */
     int online = is_online();
-    puts(online ? "已在线" : "未在线");
-    log_status("在线状态: %s", online ? "已在线" : "未在线");
-    return online ? 0 : 1;
+    int code = 1;
+    const char* state = "未在线";
+    if (online)
+    {
+        if (portal_reachable())
+        {
+            code = 0;
+            state = "已在线";
+        }
+        else
+        {
+            code = 2;
+            state = "已在线但不在校园网（portal 不可达）";
+        }
+    }
+    puts(state);
+    log_status("在线状态: %s", state);
+    return code;
 }
 
 /* ---- 单实例锁：login/reauth/logout 互斥，防 cron 与手动并发写状态文件 ----

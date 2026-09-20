@@ -105,7 +105,7 @@ cqie-auth reauth        # 先注销再重新认证（换 IP / 会话卡死时用
 cqie-auth login [--force]     认证上线（已在线直接返回）
 cqie-auth reauth [index]      先注销再重新认证
 cqie-auth logout [index]      注销下线（两级 userIndex 来源自动兜底）
-cqie-auth status              查询在线状态（退出码 0=在线, 1=离线）
+cqie-auth status              查询在线状态（退出码 0=在线, 1=离线, 2=不在校园网）
 cqie-auth userindex [hex]     解码显示 userIndex
 ```
 
