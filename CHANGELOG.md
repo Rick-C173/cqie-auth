@@ -3,6 +3,16 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.7.2] - 2026-09-21
+
+### Changed
+- **Windows 配置/状态目录改为 exe 同目录**（便携布局，不随启动方式漂移）：
+  `cqie-auth.conf` 落在 exe 目录、状态在 `state\` 子目录——计划任务/双击启动
+  不再把文件散落到 System32；compat 层新增 `compat_exe_dir()`（GetModuleFileNameW，
+  中文/空格路径安全）
+- 优先级不变：`--config`/`--state-dir` > 环境变量 > exe 目录默认 > 编译期宏；
+  Linux/OpenWrt 行为完全不变
+
 ## [1.7.1] - 2026-09-21
 
 ### Fixed

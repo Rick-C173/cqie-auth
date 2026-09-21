@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L /* fcntl / clock_gettime / nanosleep / localtime_r */
 
 #include "compat.h"
+#include "config.h" /* POSIX 默认配置/状态路径宏 */
 
 #ifdef _WIN32
 
@@ -65,7 +66,37 @@ void compat_console_utf8(void)
     SetConsoleCP(CP_UTF8);
 }
 
-int compat_stdin_is_tty(void) { return _isatty(_fileno(stdin)); }
+int compat_exe_dir(char* out, size_t n)
+{
+    wchar_t wpath[600];
+    DWORD len = GetModuleFileNameW(NULL, wpath, (DWORD)(sizeof wpath / sizeof *wpath));
+    if (len == 0 || len >= sizeof wpath / sizeof *wpath) return 0;
+    /* 程序内字符串统一 UTF-8；W 版 API + 显式转换保证中文/空格路径安全 */
+    int need = WideCharToMultiByte(CP_UTF8, 0, wpath, -1, out, (int)n, NULL, NULL);
+    if (need <= 0 || (size_t)need > n) return 0;
+    char* slash = strrchr(out, '\\');
+    if (!slash) return 0;
+    *slash = 0;
+    return out[0] ? 1 : 0;
+}
+
+int compat_default_config(char* out, size_t n)
+{
+    char dir[600];
+    if (!compat_exe_dir(dir, sizeof dir)) return 0;
+    int r = snprintf(out, n, "%s\\cqie-auth.conf", dir);
+    return r > 0 && (size_t)r < n;
+}
+
+int compat_default_state(char* out, size_t n)
+{
+    char dir[600];
+    if (!compat_exe_dir(dir, sizeof dir)) return 0;
+    int r = snprintf(out, n, "%s\\state", dir);
+    return r > 0 && (size_t)r < n;
+}
+
+void compat_stdin_is_tty(void) { return _isatty(_fileno(stdin)); }
 
 void compat_echo(int on)
 {
@@ -94,6 +125,7 @@ void compat_unlock_file(void* h)
 #else /* POSIX */
 
 #include <stdio.h>
+#include <string.h>  /* strrchr（exe 目录切分） */
 #include <sys/stat.h> /* mkdir */
 #include <time.h>
 #include <unistd.h>   /* isatty */
@@ -172,5 +204,28 @@ void compat_msleep(int ms)
 int compat_mkdir(const char* path) { return mkdir(path, 0700); }
 
 void compat_console_utf8(void) { /* POSIX 终端本就是 UTF-8，无需处理 */ }
+
+int compat_exe_dir(char* out, size_t n)
+{
+    ssize_t len = readlink("/proc/self/exe", out, n - 1);
+    if (len <= 0) return 0;
+    out[len] = 0;
+    char* slash = strrchr(out, '/');
+    if (!slash) return 0;
+    *slash = 0;
+    return out[0] ? 1 : 0;
+}
+
+int compat_default_config(char* out, size_t n)
+{
+    (void)out; (void)n;
+    return 0; /* POSIX：返回空，调用方回退编译期宏/环境变量链 */
+}
+
+int compat_default_state(char* out, size_t n)
+{
+    (void)out; (void)n;
+    return 0; /* POSIX：返回空，state_init 内部走 环境变量→宏 链 */
+}
 
 #endif

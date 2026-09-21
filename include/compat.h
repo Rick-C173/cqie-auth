@@ -90,6 +90,25 @@ int compat_mkdir(const char* path);
 void compat_console_utf8(void);
 
 /*
+ * 取当前进程可执行文件所在目录（不含结尾分隔符）。
+ * Windows 用 GetModuleFileNameW（UTF-8 输出，中文路径安全）；
+ * POSIX 用 readlink("/proc/self/exe")。失败返回 0。
+ */
+int compat_exe_dir(char* out, size_t n);
+
+/*
+ * 默认配置文件路径：Windows = <exe目录>\cqie-auth.conf（便携布局，
+ * 不随启动方式漂移）；POSIX = 编译期 CONFIG_FILE 宏。失败返回 0。
+ */
+int compat_default_config(char* out, size_t n);
+
+/*
+ * 默认状态目录：Windows = <exe目录>\state；POSIX = 编译期 STATE_DIR 宏。
+ * 失败返回 0。
+ */
+int compat_default_state(char* out, size_t n);
+
+/*
  * 终端交互辅助（首次运行向导用）。
  * compat_stdin_is_tty：stdin 是否为终端——cron/管道下为 0，向导不应触发。
  * compat_echo：开关终端回显（密码输入）；非终端或失败时静默无害。

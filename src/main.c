@@ -285,7 +285,9 @@ static int write_config_file(const struct WizardOut* w)
     FILE* f = fopen(w->path, "w");
     if (!f)
     {
-        fprintf(stderr, "无法写入 %s（权限不足？可用 --config 指定其它路径）\n", w->path);
+        fprintf(stderr,
+                "无法写入 %s（权限不足？若 exe 目录只读，请用 --config 指定可写位置）\n",
+                w->path);
         return 0;
     }
     fprintf(f,
@@ -587,7 +589,9 @@ int main(int argc, char** argv)
                     }
                     return 1;
                 }
-                state_init(state_opt);
+                char sd[600] = "";
+                compat_default_state(sd, sizeof sd);
+                state_init(state_opt ? state_opt : (sd[0] ? sd : NULL));
                 auth_set_dry_run(0);
                 if (iface)
                     http_set_source_ip(iface); /* --interface 传了就生效；无效值忽略 */
@@ -653,7 +657,10 @@ int main(int argc, char** argv)
 
     /* 凭据配置文件：--config > $CQIE_CONFIG > 编译期默认（可选文件，缺席不报错） */
     const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
-    if (!cfg_path) cfg_path = CONFIG_FILE;
+    /* 默认配置路径：Windows=exe 同目录（便携布局）；POSIX=编译期宏 */
+    char def_cfg[600] = "";
+    compat_default_config(def_cfg, sizeof def_cfg);
+    if (!cfg_path) cfg_path = def_cfg[0] ? def_cfg : CONFIG_FILE;
     char cfg_svc_raw[128] = ""; /* 配置文件里的原始 service 值（写回自愈的基准） */
     char cfg_portal[256] = "";  /* 配置文件里的 portal=（可选，覆盖编译期默认） */
     char cfg_probe[512] = "";   /* 配置文件里的 probe=（可选，覆盖编译期默认） */
@@ -703,7 +710,15 @@ int main(int argc, char** argv)
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");
 
-    state_init(state_opt);
+    /* 默认状态目录：Windows=exe 同目录 state\（便携布局）；
+     * 优先级：--state-dir > $CQIE_STATE_DIR > exe目录默认/编译期宏 */
+    char def_state[600] = "";
+    compat_default_state(def_state, sizeof def_state);
+    {
+        const char* env_sd = getenv("CQIE_STATE_DIR");
+        state_init(state_opt ? state_opt
+                             : (env_sd ? NULL : (def_state[0] ? def_state : NULL)));
+    }
     /* portal 优先级：--portal > 向导发现/配置文件 portal= > 编译期默认 */
     auth_set_portal(portal_opt ? portal_opt : (cfg_portal[0] ? cfg_portal : NULL));
     /* probe 优先级：向导输入/配置文件 probe= > 编译期默认 */
