@@ -10,6 +10,7 @@
 #
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+TEST_PORT=35100  # 场景间顺序递增取号，避免随机端口碰撞
 TMP=$(mktemp -d)
 trap '[ "${KEEP_TMP:-0}" = "1" ] || rm -rf "$TMP"; [ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null' EXIT
 
@@ -136,7 +137,7 @@ echo "== 3. 模拟 AC 端到端（login / reauth / logout / status / dry-run） 
 if ! have python3 || ! python3 -c 'import cryptography' 2>/dev/null; then
     echo "  (缺少 python3 或 cryptography 模块，跳过)"
 else
-    PORT=$((20000 + RANDOM % 20000))
+    PORT=$((TEST_PORT++))
     PWD_TEST="test-pass-123"
     # 测试凭据全部来自编译期注入；把默认配置文件指向不存在路径，
     # 防止读入开发机 /etc/cqie-auth.conf 的真实凭据（配置文件优先级更高）
@@ -317,7 +318,7 @@ echo "== 3.4 login --force（跳过已在线短路） =="
 if ! have python3 || ! python3 -c 'import cryptography' 2>/dev/null; then
     echo "  (缺少 python3 或 cryptography 模块，跳过)"
 else
-    FPORT=$((20000 + RANDOM % 20000))
+    FPORT=$((TEST_PORT++))
     cat > "$TMP/f_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$FPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$FPORT/probe"
@@ -364,7 +365,7 @@ echo "== 3.5 并行在线探测（204 命中路径） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    PPORT=$((30000 + RANDOM % 20000))
+    PPORT=$((TEST_PORT++))
     python3 -c "
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class H(BaseHTTPRequestHandler):
@@ -382,6 +383,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PPORT))==0 else 1)" && break
     done
 
     cat > "$TMP/p204.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$PPORT/eportal"
 #define PROBE_204_LIST  "http://127.0.0.1:$PPORT/generate_204"
 #define STATE_DIR        "$TMP/state-p204"
 EOF
@@ -407,7 +409,7 @@ echo "== 3.7 login --plain（密码明文提交，passwordEncrypt=false） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    PPORT=$((20000 + RANDOM % 20000))
+    PPORT=$((TEST_PORT++))
     cat > "$TMP/p_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$PPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$PPORT/probe"
@@ -449,7 +451,7 @@ echo "== 3.8 reauth <index>（指定 userIndex 注销后再认证） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    RPORT=$((20000 + RANDOM % 20000))
+    RPORT=$((TEST_PORT++))
     cat > "$TMP/r_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$RPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$RPORT/probe"
@@ -498,7 +500,7 @@ echo "== 3.9 --no-syslog（运行期开关 syslog 状态行） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    NPORT=$((20000 + RANDOM % 20000))
+    NPORT=$((TEST_PORT++))
     # 劫持 syslog()：状态行改写到 $SYSCAP_FILE，验证默认写 / 传参不写
     cat > "$TMP/syscap.c" <<'EOF'
 #include <stdio.h>
@@ -581,7 +583,7 @@ echo "== 3.10 logout 的 userIndex 服务端要回（redirectortosuccess.jsp） 
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    R2PORT=$((20000 + RANDOM % 20000))
+    R2PORT=$((TEST_PORT++))
     cat > "$TMP/r2_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$R2PORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$R2PORT/probe"
@@ -635,7 +637,7 @@ echo "== 3.11 --interface 源 IP 绑定 =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    IPORT=$((20000 + RANDOM % 20000))
+    IPORT=$((TEST_PORT++))
     cat > "$TMP/i_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$IPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$IPORT/probe"
@@ -694,7 +696,7 @@ echo "== 3.12 --config 凭据配置文件（user/password/service） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    CPORT=$((20000 + RANDOM % 20000))
+    CPORT=$((TEST_PORT++))
     cat > "$TMP/c_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$CPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$CPORT/probe"
@@ -762,7 +764,7 @@ echo "== 3.13 -u/-p/--service 与环境变量（凭据多通道） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    MPORT=$((20000 + RANDOM % 20000))
+    MPORT=$((TEST_PORT++))
     cat > "$TMP/m_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$MPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$MPORT/probe"
@@ -832,7 +834,7 @@ echo "== 3.14 --setup 首次运行向导（交互生成配置文件） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    WPORT=$((20000 + RANDOM % 20000))
+    WPORT=$((TEST_PORT++))
     cat > "$TMP/w_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$WPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$WPORT/probe"
@@ -887,7 +889,7 @@ echo "== 3.15 --setup 独立可用 + stdin EOF 死循环防护 =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    S2PORT=$((20000 + RANDOM % 20000))
+    S2PORT=$((TEST_PORT++))
     cat > "$TMP/s2_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$S2PORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$S2PORT/probe"
@@ -949,7 +951,7 @@ echo "== 3.16 校园网预检（portal 可达性） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    NPORT=$((20000 + RANDOM % 20000))
+    NPORT=$((TEST_PORT++))
     # 场景 A：探测 204 通过（能上外网）但 portal 不可达 -> 不在校园网，明确退出
     cat > "$TMP/n_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:1/eportal"
@@ -984,7 +986,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
             || bad "预检 A: logout 应拦截" "含「可能不在校园网环境」" "$(cat "$TMP/nocampus_lo.err")"
 
         # 场景 B（回归）：portal 可达 -> 预检不误伤，正常认证（复用 3.14 的向导产物亦可，这里独立跑）
-        BPORT=$((20000 + RANDOM % 20000))
+        BPORT=$((TEST_PORT++))
         cat > "$TMP/b_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$BPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$BPORT/probe"
@@ -1024,7 +1026,7 @@ echo "== 3.17 单实例锁（login/reauth/logout 互斥） =="
 if ! have python3 || ! have flock; then
     echo "  (缺少 python3 或 flock，跳过)"
 else
-    LPORT=$((20000 + RANDOM % 20000))
+    LPORT=$((TEST_PORT++))
     cat > "$TMP/l_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$LPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$LPORT/probe"
@@ -1075,7 +1077,7 @@ echo "== 3.18 探测成功后运营商写回配置文件（自愈） =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    APORT=$((20000 + RANDOM % 20000))
+    APORT=$((TEST_PORT++))
     cat > "$TMP/a6_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$APORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$APORT/probe"
@@ -1156,7 +1158,7 @@ echo "== 3.19 运营商自愈：配置留空时逐个尝试列表（规避词表
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    GPORT=$((20000 + RANDOM % 20000))
+    GPORT=$((TEST_PORT++))
     cat > "$TMP/g_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$GPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$GPORT/probe"
@@ -1210,7 +1212,7 @@ echo "== 3.20 status 三态：0=在线 1=离线 2=不在校园网 =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    TPORT=$((20000 + RANDOM % 20000))
+    TPORT=$((TEST_PORT++))
     cat > "$TMP/t_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:1/eportal"
 #define PROBE_URL       "http://127.0.0.1:$TPORT/probe"
@@ -1270,7 +1272,7 @@ echo "== 3.21 命令即验证：失败不写盘，重试成功才写盘 =="
 if ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
-    YPORT=$((20000 + RANDOM % 20000))
+    YPORT=$((TEST_PORT++))
     cat > "$TMP/y_override.h" <<EOF
 #define PORTAL_URL      "http://127.0.0.1:$YPORT/eportal"
 #define PROBE_URL       "http://127.0.0.1:$YPORT/probe"

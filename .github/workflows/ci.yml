@@ -9,7 +9,7 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 安装依赖
         run: |
@@ -37,7 +37,7 @@ jobs:
 
       - name: 上传测试报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-report
           path: |
@@ -48,7 +48,7 @@ jobs:
   windows:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: 安装 mingw-w64
         run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
       - name: 交叉编译 Windows 产物

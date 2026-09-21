@@ -618,7 +618,9 @@ static int login_impl(int force, int known_offline)
     int login_ok = 0;
     for (int ci = 0; ci < ncand && !login_ok; ci++)
     {
-        snprintf(service, sizeof service, "%s", cands[ci]);
+        size_t cl = strnlen(cands[ci], sizeof service - 1);
+        memcpy(service, cands[ci], cl);
+        service[cl] = 0;
         snprintf(g_last_service, sizeof g_last_service, "%s", service);
         free(svc_enc);
         free(lb);
