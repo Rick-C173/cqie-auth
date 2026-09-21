@@ -96,7 +96,7 @@ int compat_default_state(char* out, size_t n)
     return r > 0 && (size_t)r < n;
 }
 
-void compat_stdin_is_tty(void) { return _isatty(_fileno(stdin)); }
+int compat_stdin_is_tty(void) { return _isatty(_fileno(stdin)); }
 
 void compat_echo(int on)
 {
