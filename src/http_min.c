@@ -188,7 +188,7 @@ int http_resolve_host_limited(const char* host, long timeout_ms,
                 inet_ntop(AF_INET6,
                           &((struct sockaddr_in6*)res->ai_addr)->sin6_addr,
                           ip, sizeof ip);
-            if (ip[0]) write(fds[1], ip, strlen(ip));
+            if (ip[0] && write(fds[1], ip, strlen(ip)) < 0) _exit(1);
             freeaddrinfo(res);
         }
         _exit(0);
