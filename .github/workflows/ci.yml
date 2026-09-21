@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc xxd
+          python3 -m pip install --user cryptography
+
+      - name: 构建
+        run: make
+
+      - name: 全量测试
+        run: |
+          set -o pipefail
+          make check 2>&1 | tee test-report.txt
+
+      - name: 语句覆盖率（门禁：必须 100%）
+        run: |
+          rm -f *.gcda *.gcno
+          KEEP_TMP=1 CC='gcc --coverage' make check
+          python3 cov_agg.py | tee coverage-report.txt
+          grep -q '= 100% ====' coverage-report.txt || {
+            echo "::error::语句覆盖率未达 100%"
+            exit 1
+          }
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: |
+            test-report.txt
+            coverage-report.txt
+          if-no-files-found: warn
+
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: 交叉编译 Windows 产物
+        run: make windows
+      - name: 冒烟（file 类型检查）
+        run: file cqie-auth.exe

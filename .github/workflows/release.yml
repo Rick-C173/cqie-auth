@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 构建 Linux x86_64
+        run: |
+          make
+          cp cqie-auth cqie-auth-linux-x86_64
+      - name: 全量测试
+        run: |
+          sudo apt-get update && sudo apt-get install -y bc xxd
+          python3 -m pip install --user cryptography
+          make check 2>&1 | tee test-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            cqie-auth-linux-x86_64
+            test-report.txt
+
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: 交叉编译 Windows x86_64
+        run: |
+          make windows
+          cp cqie-auth.exe cqie-auth-windows-x86_64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: cqie-auth-windows-x86_64.exe
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: 生成校验和
+        run: sha256sum cqie-auth-linux-x86_64 cqie-auth-windows-x86_64.exe > sha256sums.txt
+      - name: 发布
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cqie-auth-linux-x86_64
+            cqie-auth-windows-x86_64.exe
+            sha256sums.txt
+          generate_release_notes: true

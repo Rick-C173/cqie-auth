@@ -8,10 +8,12 @@
 //   harness redirect <page_file>
 //   harness mac <query_string>
 //   harness hexdec <hex_string>
+//   harness dns <host> <timeout_ms>   （0=成功输出 IP，非 0=解析失败/超时）
 //
 #include "bn.h"
 #include "rsa.h"
 #include "util.h"
+#include "http.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,6 +95,18 @@ int main(int argc, char** argv)
     {
         hex_print_decode(argv[2]);
         return 0;
+    }
+    if (!strcmp(cmd, "dns"))
+    {
+        /* dns <host> <timeout_ms>：带超时解析（覆盖 fork 快速路径/正常解析/超时分支） */
+        char out[64] = "";
+        if (http_resolve_host_limited(argv[2], atol(argv[3]), out, sizeof out) == 0)
+        {
+            puts(out);
+            return 0;
+        }
+        puts("FAIL");
+        return 1;
     }
     return 2;
 }

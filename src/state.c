@@ -56,7 +56,8 @@ const char* state_init(const char* cli_dir)
     }
     else
     {
-        LOG_WARN("状态目录 %s 不可用，回退到当前目录", dir);
+        LOG_ERROR("状态目录 %s 不可用，回退到当前目录（状态文件将写在工作目录，"
+                  "建议用 --state-dir 指定可写目录）", dir);
         snprintf(g_dir, sizeof g_dir, ".");
     }
     LOG_DEBUG("状态目录: %s", g_dir);
@@ -109,15 +110,7 @@ int state_read(const char* name, char* out, size_t n)
 {
     char path[600];
     if (!state_path(path, sizeof path, name)) return 0;
-    if (file_read_trim(path, out, n) && out[0]) return 1;
-
-    /* 兼容老版本：CWD 下的同名文件 */
-    if (strcmp(state_dir(), ".") != 0 && file_read_trim(name, out, n) && out[0])
-    {
-        LOG_DEBUG("状态目录里没有 %s，使用当前目录的同名文件", name);
-        return 1;
-    }
-    return 0;
+    return file_read_trim(path, out, n) && out[0];
 }
 
 void state_remove(const char* name)

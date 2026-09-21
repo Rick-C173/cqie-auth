@@ -21,9 +21,26 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 echo "== 0. 编译自检工具 =="
 if ! ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -o "$TMP/harness" \
-        "$ROOT/tests/harness.c" "$ROOT/src/bn.c" "$ROOT/src/rsa.c" "$ROOT/src/compat.c" "$ROOT/src/util.c"; then
-    echo "编译 harness 失败"; exit 1
+        "$ROOT/tests/harness.c" "$ROOT/src/bn.c" "$ROOT/src/rsa.c" "$ROOT/src/compat.c" "$ROOT/src/util.c" \
+        "$ROOT/src/log.c" "$ROOT/src/http_min.c" 2>"$TMP/h_cc.err"; then
+    echo "编译 harness 失败"; head -5 "$TMP/h_cc.err"; exit 1
 fi
+
+# ---------------------------------------------------------------- 0.5 DNS 带超时解析
+echo
+echo "== 0.5 DNS 带超时解析（fork+限时等待） =="
+DNS_OUT=$("$TMP/harness" dns 127.0.0.1 1000 2>/dev/null)
+[ "$DNS_OUT" = "127.0.0.1" ] \
+    && ok "DNS: 纯 IP 快速路径" \
+    || bad "DNS: 纯 IP 应直通" "127.0.0.1" "$DNS_OUT"
+DNS_OUT=$("$TMP/harness" dns localhost 5000 2>/dev/null)
+[ "$DNS_OUT" = "127.0.0.1" ] || [ "$DNS_OUT" = "::1" ] \
+    && ok "DNS: localhost 走 fork 解析" \
+    || bad "DNS: localhost 应解析成功" "127.0.0.1 或 ::1" "$DNS_OUT"
+"$TMP/harness" dns nonexistent.invalid 0 >/dev/null 2>&1
+[ $? = "1" ] \
+    && ok "DNS: 超时(0ms)强制走 SIGKILL 分支并按失败处理" \
+    || bad "DNS: timeout=0 应按失败返回" "exit=1" "$?"
 
 # ---------------------------------------------------------------- 1. RSA
 echo

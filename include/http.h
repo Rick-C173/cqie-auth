@@ -57,4 +57,13 @@ const char* http_source_ip(void);
  */
 int http_host_reachable(const char* host, int port, long timeout_ms);
 
+/*
+ * 带超时的域名解析（POSIX）：getaddrinfo 同步不可中断，内网 DNS 无响应时
+ * 会拖垮上层超时机制，此函数用 fork 子进程解析 + 父进程限时等待（超时
+ * SIGKILL）。纯 IP 输入走快速路径（Windows 下退化为直接 getaddrinfo）。
+ * 成功返回 0 且 out=数字 IP 字符串；失败/超时返回 -1。
+ */
+int http_resolve_host_limited(const char* host, long timeout_ms,
+                              char* out, size_t outsz);
+
 #endif /* HTTP_H */

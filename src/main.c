@@ -765,7 +765,6 @@ int main(int argc, char** argv)
             usage(stderr, argv[0]);
             ret = 2;
         }
-        auth_session_unlock(); /* 单实例锁随命令结束释放 */
 
         /* 运营商自愈写回：非向导路径维持原行为（pending 路径的写盘已含最新值） */
         if (ret == 0 && !pending_write &&
@@ -783,6 +782,8 @@ int main(int argc, char** argv)
                     fprintf(stderr, "运营商写回配置失败（不影响本次认证）\n");
             }
         }
+
+        auth_session_unlock(); /* 持锁完成写回/写盘后释放，消除写回并发窗口 */
 
         if (pending_write)
         {

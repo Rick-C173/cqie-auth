@@ -34,6 +34,8 @@
 #include <ws2tcpip.h> /* inet_pton */
 #else
 #include <arpa/inet.h> /* inet_pton */
+#include <sys/wait.h>  /* waitpid（DNS 超时子进程回收） */
+#include <unistd.h>    /* fork / pipe / read / close */
 #endif
 
 #define HDR_CAP   4096            /* 响应头上限，AC 的头很短 */
@@ -134,18 +136,133 @@ int http_set_source_ip(const char* ip)
 
 const char* http_source_ip(void) { return g_src_ip; }
 
-static sock_t connect_timeout(const char* host, int port, long timeout_ms)
-{
-    struct addrinfo hints, *res = NULL, *ai;
-    char portstr[16];
-    sock_t fd = SOCK_INVALID;
+#ifndef _WIN32
+#define DNS_TIMEOUT_MS 1500 /* 单次域名解析上限；超时视为解析失败 */
 
+/*
+ * 带超时的域名解析（POSIX）：getaddrinfo 是同步实现且不可中断，
+ * 内网 DNS 无响应时会拖垮上层一切超时机制（探测 2s 总时限失效）。
+ * 方案：fork 子进程解析、结果经 pipe 写回；父进程限时等待，
+ * 超时后 SIGKILL 子进程。纯 IP 输入走快速路径不 fork。
+ * 成功返回 0 且 out=数字 IP 字符串；失败/超时返回 -1。
+ */
+int http_resolve_host_limited(const char* host, long timeout_ms,
+                                char* out, size_t outsz)
+{
+    /* 快速路径：本来就是数字地址（123.123.123.123 / 127.0.0.1 等） */
+    {
+        struct in_addr v4;
+        struct in6_addr v6;
+        if (inet_pton(AF_INET, host, &v4) == 1 || inet_pton(AF_INET6, host, &v6) == 1)
+        {
+            snprintf(out, outsz, "%s", host);
+            return 0;
+        }
+    }
+
+    int fds[2];
+    if (pipe(fds) != 0) return -1;
+    pid_t pid = fork();
+    if (pid < 0)
+    {
+        close(fds[0]);
+        close(fds[1]);
+        return -1;
+    }
+    if (pid == 0)
+    {
+        /* 子进程：解析首个地址并写回（短于 PIPE_BUF，写入原子） */
+        close(fds[0]);
+        struct addrinfo hints, *res = NULL;
+        memset(&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        if (getaddrinfo(host, NULL, &hints, &res) == 0 && res)
+        {
+            char ip[64] = "";
+            if (res->ai_family == AF_INET)
+                inet_ntop(AF_INET,
+                          &((struct sockaddr_in*)res->ai_addr)->sin_addr,
+                          ip, sizeof ip);
+            else
+                inet_ntop(AF_INET6,
+                          &((struct sockaddr_in6*)res->ai_addr)->sin6_addr,
+                          ip, sizeof ip);
+            if (ip[0]) write(fds[1], ip, strlen(ip));
+            freeaddrinfo(res);
+        }
+        _exit(0);
+    }
+
+    /* 父进程：限时等待解析结果 */
+    close(fds[1]);
+    struct pollfd pfd = {fds[0], POLLIN, 0};
+    int r = poll(&pfd, 1, (int)timeout_ms);
+    if (r <= 0)
+    {
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        close(fds[0]);
+        return -1; /* 超时/管道错误：按解析失败处理 */
+    }
+    char ip[64] = "";
+    ssize_t n = read(fds[0], ip, sizeof ip - 1);
+    close(fds[0]);
+    if (n <= 0)
+    {
+        waitpid(pid, NULL, 0);
+        return -1; /* 解析失败（getaddrinfo 返回非 0） */
+    }
+    ip[n] = 0;
+    waitpid(pid, NULL, 0);
+    snprintf(out, outsz, "%s", ip);
+    return 0;
+}
+
+/*
+ * 统一的 TCP 地址解析：POSIX 走带超时的 fork 解析（结果用 AI_NUMERICHOST
+ * 免二次查询）；Windows 无 fork，保持原 getaddrinfo 阻塞行为。
+ * 成功返回 0 且 *res 为解析链表（调用方 freeaddrinfo）。
+ */
+static int tcp_resolve(const char* host, int port, struct addrinfo** res)
+{
+    struct addrinfo hints;
+    char portstr[16];
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     snprintf(portstr, sizeof portstr, "%d", port);
+#ifndef _WIN32
+    char ipstr[64];
+    if (http_resolve_host_limited(host, DNS_TIMEOUT_MS, ipstr, sizeof ipstr) != 0)
+        return -1;
+    hints.ai_flags = AI_NUMERICHOST;
+    return getaddrinfo(ipstr, portstr, &hints, res) == 0 ? 0 : -1;
+#else
+    return getaddrinfo(host, portstr, &hints, res) == 0 ? 0 : -1;
+#endif
+}
 
-    if (getaddrinfo(host, portstr, &hints, &res) != 0) return SOCK_INVALID;
+#endif /* !_WIN32 */
+
+static sock_t connect_timeout(const char* host, int port, long timeout_ms)
+{
+    struct addrinfo *res = NULL, *ai;
+    sock_t fd = SOCK_INVALID;
+
+#ifndef _WIN32
+    if (tcp_resolve(host, port, &res) != 0) return SOCK_INVALID;
+#else
+    {
+        struct addrinfo hints;
+        char portstr[16];
+        memset(&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        snprintf(portstr, sizeof portstr, "%d", port);
+        if (getaddrinfo(host, portstr, &hints, &res) != 0) return SOCK_INVALID;
+    }
+#endif
 
     for (ai = res; ai; ai = ai->ai_next)
     {
@@ -646,15 +763,22 @@ static probe_t g_probe[PROBE_MAX];   /* 文件域：非重入；CLI 单线程，
 /* 发起非阻塞 connect（不等待结果），DNS 失败返回 SOCK_INVALID */
 static sock_t connect_start(const char* host, int port)
 {
-    struct addrinfo hints, *res = NULL, *ai;
-    char portstr[16];
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    snprintf(portstr, sizeof portstr, "%d", port);
+    struct addrinfo *res = NULL, *ai;
 
     sock_t fd = SOCK_INVALID;
-    if (getaddrinfo(host, portstr, &hints, &res) != 0) return SOCK_INVALID;
+#ifndef _WIN32
+    if (tcp_resolve(host, port, &res) != 0) return SOCK_INVALID;
+#else
+    {
+        struct addrinfo hints;
+        char portstr[16];
+        memset(&hints, 0, sizeof hints);
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        snprintf(portstr, sizeof portstr, "%d", port);
+        if (getaddrinfo(host, portstr, &hints, &res) != 0) return SOCK_INVALID;
+    }
+#endif
     for (ai = res; ai; ai = ai->ai_next)
     {
         fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);

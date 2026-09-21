@@ -3,6 +3,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.7.1] - 2026-09-21
+
+### Fixed
+- **DNS 解析超时**（POSIX）：`getaddrinfo` 同步不可中断，内网 DNS 无响应会拖垮
+  探测总超时——改为 fork 子进程解析 + 父进程 1.5s 限时等待（超时 SIGKILL），
+  纯 IP 输入走快速路径；Windows 保持原行为
+- 状态目录不可用回退 CWD 时升级为 ERROR 并给出 `--state-dir` 建议；
+  移除 `state_read` 的老版本 CWD 兼容回退（语义歧义来源）
+- 运营商自愈写回/向导写盘改为**持锁执行**，消除解锁后的写回并发窗口
+
+### Added
+- **GitHub Actions CI**：push/PR 自动跑 Linux 构建 + 133 项测试 +
+  **语句覆盖率 100% 门禁**（cov_agg.py 聚合），测试报告/覆盖率报告上传 artifact；
+  Windows mingw 交叉编译冒烟
+- **Release 工作流**：push tag `v*` 自动构建 Linux/Windows 产物 + sha256 并发布
+- `harness dns <host> <timeout_ms>` 自检子命令（快速路径/正常解析/超时三分支）
+
 ## [1.7.0] - 2026-09-20
 
 ### Added

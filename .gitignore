@@ -24,3 +24,7 @@ deploy.sh
 
 # ====== 命令流程文档（本地参考）======
 md/
+
+# Python 字节码
+__pycache__/
+*.pyc
