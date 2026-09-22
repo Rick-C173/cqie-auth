@@ -27,6 +27,13 @@ void auth_set_plain(int on);
 int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t lsz);
 
 /*
+ * doctor - 环境诊断子命令（只读：不加锁、不登录、不写文件）。
+ * 逐环检查外网连通/探测地址/认证服务器/运营商列表/配置完整性，
+ * verdict 直接给下一步建议。返回 0=全部正常，1=存在异常。
+ */
+int cmd_doctor(const char* cfg_path);
+
+/*
  * 运行期凭据（来自配置文件）：user/password/service 三项，传 NULL/空串
  * 表示该项不设置，回落编译期默认（发布版默认为空）。
  * auth_user/auth_password/auth_service 返回生效值（永不返回 NULL）。

@@ -5,6 +5,8 @@
 //   cqie-auth reauth [index]   先注销再认证
 //   cqie-auth logout [index]   注销（等价原 cqie-exit.sh）
 //   cqie-auth status           仅检测在线状态（0=在线, 1=离线, 2=不在校园网）
+//   cqie-auth doctor           环境诊断（逐环检查外网/探测地址/portal/运营商/配置）
+//   cqie-auth doctor           环境诊断（逐环检查外网/探测地址/portal/运营商/配置）
 //   cqie-auth userindex [hex]  输出解码后的 userIndex（省略参数时读状态文件）
 //
 // 动作 = 子命令，修饰 = 选项（-v/--log/--dry-run/--plain…），与 git/systemctl 的习惯一致。
@@ -40,6 +42,7 @@ static void usage(FILE* out, const char* argv0)
             "    reauth      先注销再重新认证（可带 index）\n"
             "    logout      注销下线（缺省读状态文件）\n"
             "    status      在线状态（退出码 0=在线, 1=离线, 2=不在校园网）\n"
+            "    doctor      环境诊断（外网/探测地址/认证服务器/运营商/配置）\n"
             "    userindex   解码 userIndex\n"
             "\n"
             "选项:\n"
@@ -74,6 +77,7 @@ static void usage(FILE* out, const char* argv0)
             "    reauth      先注销当前会话，再重新认证（index 省略时读状态文件；换 IP / 卡计时用）\n"
             "    logout      注销下线（index 省略时读状态文件里的 userIndex）\n"
             "    status      只检测在线状态（退出码 0=在线, 1=离线, 2=不在校园网）\n"
+            "    doctor      环境诊断（外网/探测地址/认证服务器/运营商/配置）\n"
             "    userindex   解码显示 userIndex（hex 省略时读状态文件）\n"
             "    help        显示本帮助\n"
             "\n"
@@ -774,6 +778,7 @@ int main(int argc, char** argv)
         else if (!strcmp(cmd, "logout")) ret = cmd_logout(arg);
         else if (!strcmp(cmd, "status")) ret = cmd_status();
         else if (!strcmp(cmd, "userindex")) ret = cmd_userindex(arg);
+    else if (!strcmp(cmd, "doctor")) ret = cmd_doctor(cfg_path);
         else
         {
             fprintf(stderr, "未知命令: %s\n\n", cmd);

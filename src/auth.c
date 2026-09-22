@@ -867,6 +867,105 @@ int cmd_reauth(const char* user_index)
     return login_impl(1, 1);
 }
 
+/*
+ * doctor - 环境诊断子命令（只读：不加锁、不登录、不写任何文件）。
+ * 逐环检查外网/探测地址/认证服务器/运营商列表/配置，verdict 直接给下一步建议。
+ * 返回 0=全部正常，1=存在异常。
+ */
+int cmd_doctor(const char* cfg_path)
+{
+    printf("cqie-auth 环境诊断\n\n");
+    long t0 = log_tick_ms();
+    int problems = 0;
+
+    /* [1/4] 外网连通 */
+    printf("[1/4] 外网连通（并行探测 204 端点）\n");
+    int online = is_online();
+    if (online)
+        printf("      OK 能上外网（%ld ms）\n", log_tick_ms() - t0);
+    else
+    {
+        printf("      XX 不能上外网（%ld ms）\n", log_tick_ms() - t0);
+        problems++;
+    }
+
+    /* [2/4] 探测地址：可达性 + 劫持跳转验证。
+     * 注意：已认证状态下网关不劫持，无跳转响应属正常现象，不计入 problems。 */
+    printf("[2/4] 探测地址 %s\n", probe_url());
+    char dportal[256] = "", dlist[1024] = "";
+    int discovered = auth_discover_portal(dportal, sizeof dportal, dlist, sizeof dlist);
+    if (discovered)
+    {
+        /* auth_discover_portal 已把发现的 portal 设为当前生效值；
+         * doctor 里改回配置链的值不必要——显示即可，进程随即退出 */
+        printf("      OK 可达，劫持跳转正常\n");
+        printf("      认证页: %s\n", dportal);
+    }
+    else
+    {
+        printf("      -- 不可达或无劫持响应（已认证时属正常；未认证时说明地址失效）\n");
+    }
+
+    /* [3/4] 认证服务器可达性 */
+    printf("[3/4] 认证服务器 %s\n", portal());
+    t0 = log_tick_ms();
+    int preachable = portal_reachable();
+    if (preachable)
+        printf("      OK 可达（%ld ms）\n", log_tick_ms() - t0);
+    else
+    {
+        printf("      XX 不可达（%ld ms）\n", log_tick_ms() - t0);
+        problems++;
+    }
+
+    /* [4/4] 运营商列表（依赖探测与 portal，二者任一失败则标记跳过） */
+    printf("[4/4] 运营商列表\n");
+    if (discovered && preachable)
+    {
+        printf("      OK %s\n", dlist[0] ? dlist : "(空)");
+    }
+    else
+    {
+        printf("      -- 前置环节失败，未拉取\n");
+    }
+
+    /* [5/5] 配置检查 */
+    printf("[5/5] 配置\n");
+    printf("      文件: %s\n", cfg_path && cfg_path[0] ? cfg_path : "(未指定)");
+    if (auth_user()[0] && auth_password()[0])
+        printf("      OK user/password 已配置（user=%s）\n", auth_user());
+    else
+    {
+        printf("      XX user/password 未配置（走 --setup 向导或编辑配置文件）\n");
+        problems++;
+    }
+    printf("      当前生效: service=%s portal=%s\n",
+           auth_service()[0] ? auth_service() : "(空=自动)",
+           portal());
+
+    /* verdict：按 online/preachable 矩阵给建议（探测无劫持响应属已认证常态，单独提示） */
+    printf("\n结论: ");
+    if (online && preachable)
+    {
+        if (discovered)
+            printf("环境正常（未认证态），cqie-auth login 即可上线\n");
+        else
+            printf("链路正常；探测地址无劫持响应通常表示已在线。"
+                   "若 login 仍失败，换 probe= 地址再试\n");
+    }
+    else if (online && !preachable)
+        printf("能上外网但认证服务器不可达——你不在校园网内，或 portal 地址已变更"
+               "（用 --portal 或配置文件 portal= 更新）\n");
+    else if (!online && preachable)
+        printf("在校园网内但尚未认证——cqie-auth login 即可上线\n");
+    else
+        printf("外网与认证服务器均不可达——完全断网，或你不在校园网\n");
+    if (!discovered)
+        printf("提示: 探测地址无劫持响应时，建议换 probe= 地址（保持 http:// 纯 IP 形式）\n");
+
+    return problems ? 1 : 0;
+}
+
 int cmd_userindex(const char* hex)
 {
     char buf[1024];
