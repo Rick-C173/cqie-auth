@@ -3,6 +3,31 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.9.0] - 2026-11-04
+
+### Added
+- **`reset` 子命令：删除当前凭据配置文件**。默认交互确认（文件内含明文密码），
+  `--force` 免确认可直接进脚本；文件不存在时幂等提示（exit 0）。删除后凭据缺失，
+  下次 login 在终端上会重新进入配置向导。状态文件（userIndex）不动，注销仍可用
+- **向导运营商改为"探测一次 + 序号选择"**：收完用户名/密码后探测运营商列表，
+  编号展示供选择（输入 `1`/`2`/`3` 即可），**回车=留空**——不配置，登录时
+  自动逐项尝试、成功后写回实际命中值（原有 pending_write 自愈机制不变）。
+  兼容直接输入名称（列表外自定义值/离线场景），列表获取失败时可直接手输名称
+  或留空跳过
+- **check.sh 支持 Windows（Git Bash/MinGW）本机运行**：编译包装补
+  `-DUSE_SYSLOG=0 -lws2_32`；syslog 劫持场景与 0600 权限断言按平台跳过；
+  `http_resolve_host_limited` 补 Windows 退化实现（直接 getaddrinfo，
+  兑现 http.h 文档行为），harness 可在 Windows 链接
+
+### Fixed
+- **Windows 上 login/reauth/logout 一律报"不在校园网"**：`connect_timeout`
+  是进程首个网络调用时无人执行过 WSAStartup，`socket()` 恒 WSANOTINITIALISED；
+  现在其 Windows 分支自行 `sock_init()`（幂等）
+- **Windows 上 `--state-dir`/编译期 STATE_DIR 绝对路径被判"不可用"**：
+  `mkdir_p` 把盘根段（"C:"）当目录创建且 stat "C:" 失败；现跳过盘根段检查
+- 状态文件（userIndex）改为二进制写，跨平台统一 LF（Windows 不再产生 CRLF；
+  读取端 file_read_trim 本就兼容两种）
+
 ## [1.8.0] - 2026-09-22
 
 ### Added

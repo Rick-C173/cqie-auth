@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #ifndef _WIN32
 #include <sys/stat.h> /* 配置文件权限检查 */
 #else
@@ -44,6 +45,7 @@ static void usage(FILE* out, const char* argv0)
             "    status      在线状态（退出码 0=在线, 1=离线, 2=不在校园网）\n"
             "    doctor      环境诊断（外网/探测地址/认证服务器/运营商/配置）\n"
             "    userindex   解码 userIndex\n"
+            "    reset       删除配置文件（--force 免确认）\n"
             "\n"
             "选项:\n"
             "    -v, --verbose      调试（-v 流程/-vv HTTP/-vvv 全文）\n"
@@ -79,6 +81,7 @@ static void usage(FILE* out, const char* argv0)
             "    status      只检测在线状态（退出码 0=在线, 1=离线, 2=不在校园网）\n"
             "    doctor      环境诊断（外网/探测地址/认证服务器/运营商/配置）\n"
             "    userindex   解码显示 userIndex（hex 省略时读状态文件）\n"
+            "    reset       删除凭据配置文件（默认确认，--force 免确认；下次 login 重新向导）\n"
             "    help        显示本帮助\n"
             "\n"
             "选项:\n"
@@ -366,7 +369,11 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
         return 1;
     }
 
-    /* 运营商选择：探测列表后按序号选（留空=登录时逐项尝试并自愈写回） */
+    /* 运营商选择：探测列表后按序号选（留空=登录时逐项尝试并自愈写回）。
+     * getServices 表单携带 username，探测前先让本轮输入在会话生效
+     *（首次运行时配置里没有凭据，否则空账号拉列表；返回后 main 流程会再设一遍） */
+    auth_set_credentials(w->user, w->pass, w->svc);
+    auth_set_probe(w->probe[0] ? w->probe : NULL);
     printf("正在获取运营商列表...\n");
     fflush(stdout);
     {
@@ -380,10 +387,13 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
             {
                 const char* e = strchr(p, '@');
                 size_t len = e ? (size_t)(e - p) : strlen(p);
-                size_t c = len < sizeof items[0] - 1 ? len : sizeof items[0] - 1;
-                memcpy(items[nitems], p, c);
-                items[nitems][c] = 0;
-                nitems++;
+                if (len) /* 跳过空项（服务端偶发 "a@@b"/"@"），空名字不是合法运营商 */
+                {
+                    size_t c = len < sizeof items[0] - 1 ? len : sizeof items[0] - 1;
+                    memcpy(items[nitems], p, c);
+                    items[nitems][c] = 0;
+                    nitems++;
+                }
                 if (!e) break;
                 p = e + 1;
             }
@@ -720,14 +730,14 @@ int main(int argc, char** argv)
     {
         char cfg_svc[128] = "";
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
-        /* --setup 时允许文件不存在——向导就是要创建它 */
+        /* --setup / reset 时允许文件不存在——前者就是要创建它，后者幂等删除 */
         if (load_config_file(cfg_path, cfg_user, sizeof cfg_user,
                              cfg_pass, sizeof cfg_pass, cfg_svc, sizeof cfg_svc,
                              cfg_portal, sizeof cfg_portal, cfg_probe, sizeof cfg_probe))
         {
             LOG_DEBUG("凭据配置: %s", cfg_path);
         }
-        else if (explicit_cfg && !setup)
+        else if (explicit_cfg && !setup && (!cmd || strcmp(cmd, "reset") != 0))
         {
             fprintf(stderr, "配置文件不存在或不可读: %s\n\n", cfg_path);
             usage(stderr, argv[0]);
@@ -739,6 +749,47 @@ int main(int argc, char** argv)
         auth_set_credentials(getenv("CQIE_USER"), getenv("CQIE_PASS"),
                              getenv("CQIE_SERVICE"));
         auth_set_credentials(cli_user, cli_pass, cli_svc);
+    }
+
+    /* reset：删除当前凭据配置文件（--force 跳过确认）。文件内含明文密码，
+     * 默认交互确认；删除后凭据缺失，下次 login 在终端上会重新进入配置向导。
+     * 状态文件（userIndex）不动，注销会话仍可用 logout。 */
+    if (!strcmp(cmd, "reset"))
+    {
+        FILE* probe = fopen(cfg_path, "r");
+        if (!probe)
+        {
+            printf("配置文件不存在，无需删除: %s\n", cfg_path);
+            log_close();
+            sock_quit();
+            return 0;
+        }
+        fclose(probe);
+        printf("将删除配置文件: %s（内含明文密码）\n", cfg_path);
+        if (!force)
+        {
+            printf("确认删除? (y/N): ");
+            fflush(stdout);
+            char ans[16] = "";
+            if (!read_line(ans, sizeof ans, 0) || (ans[0] != 'y' && ans[0] != 'Y'))
+            {
+                printf("已取消，文件保留。\n");
+                log_close();
+                sock_quit();
+                return 1;
+            }
+        }
+        if (remove(cfg_path) != 0)
+        {
+            fprintf(stderr, "删除失败: %s（%s）\n", cfg_path, strerror(errno));
+            log_close();
+            sock_quit();
+            return 1;
+        }
+        printf("已删除 %s。下次 login 将重新进入配置向导。\n", cfg_path);
+        log_close();
+        sock_quit();
+        return 0;
     }
 
     /* 首次运行向导触发：

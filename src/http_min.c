@@ -219,6 +219,44 @@ int http_resolve_host_limited(const char* host, long timeout_ms,
     return 0;
 }
 
+#else
+/*
+ * Windows：无 fork，退化为直接 getaddrinfo（http.h 文档行为）。
+ * getaddrinfo 阻塞不可中断，timeout_ms 不生效（socket 层自带超时兜底）；
+ * 纯 IP 输入仍走快速路径，不发解析请求。
+ */
+int http_resolve_host_limited(const char* host, long timeout_ms,
+                                char* out, size_t outsz)
+{
+    (void)timeout_ms;
+    if (!sock_init()) return -1; /* getaddrinfo 前必须 WSAStartup */
+    struct in_addr v4;
+    struct in6_addr v6;
+    if (inet_pton(AF_INET, host, &v4) == 1 || inet_pton(AF_INET6, host, &v6) == 1)
+    {
+        snprintf(out, outsz, "%s", host);
+        return 0;
+    }
+    struct addrinfo hints, *res = NULL;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return -1;
+    char ip[64] = "";
+    if (res->ai_family == AF_INET)
+        inet_ntop(AF_INET, &((struct sockaddr_in*)res->ai_addr)->sin_addr,
+                  ip, sizeof ip);
+    else
+        inet_ntop(AF_INET6, &((struct sockaddr_in6*)res->ai_addr)->sin6_addr,
+                  ip, sizeof ip);
+    freeaddrinfo(res);
+    if (!ip[0]) return -1;
+    snprintf(out, outsz, "%s", ip);
+    return 0;
+}
+#endif /* _WIN32 */
+
+#ifndef _WIN32
 /*
  * 统一的 TCP 地址解析：POSIX 走带超时的 fork 解析（结果用 AI_NUMERICHOST
  * 免二次查询）；Windows 无 fork，保持原 getaddrinfo 阻塞行为。
@@ -253,6 +291,9 @@ static sock_t connect_timeout(const char* host, int port, long timeout_ms)
 #ifndef _WIN32
     if (tcp_resolve(host, port, &res) != 0) return SOCK_INVALID;
 #else
+    /* 本函数常是进程第一个网络调用（如 cmd_login 先跑 portal 预检），
+     * Winsock 不初始化则 socket() 一律 WSANOTINITIALISED；sock_init 幂等 */
+    if (!sock_init()) return SOCK_INVALID;
     {
         struct addrinfo hints;
         char portstr[16];

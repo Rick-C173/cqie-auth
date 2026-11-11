@@ -59,8 +59,10 @@ ssh root@192.168.1.1 'chmod 755 /usr/bin/cqie-auth && mkdir -p /etc/cqie-auth &&
 cqie-auth login
 ```
 
-向导会依次询问用户名、密码（不回显、输两遍）、运营商名（直接回车=自动探测），
-写入 `/etc/cqie-auth.conf`（权限 600）后**当场继续认证**。
+向导会依次询问用户名、密码（不回显）、探测地址、配置文件路径，随后探测一次
+运营商列表编号展示供选择（输入 `1`/`2`/`3` 即可，也可直接输入名称；回车=留空，
+登录时自动逐项尝试并写回实际命中值），实测验证通过才写入 `/etc/cqie-auth.conf`
+（权限 600）并**当场继续认证**。
 
 也可以手动编辑配置文件（示例见 [cqie-auth.conf.example](cqie-auth.conf.example)），
 key=value 格式、`#` 注释、建议权限 600：
@@ -83,7 +85,8 @@ portal=http://10.253.3.84/eportal
 
 可选 `probe=` 键覆盖探测地址（默认 `http://123.123.123.123`，HTTP+纯 IP 劫持最可靠；
 留空用默认）。首次运行向导（`login --setup` 或凭据缺失时自动触发）会依次询问
-用户名/密码/探测地址/配置路径，实测验证通过后才写入配置文件——失败不落盘。
+用户名/密码/探测地址/配置路径，并探测运营商列表供序号选择（回车=留空自动尝试），
+实测验证通过后才写入配置文件——失败不落盘。
 
 示例配置见仓库中的 [cqie-auth.conf.example](cqie-auth.conf.example)。
 
@@ -112,6 +115,7 @@ cqie-auth logout [index]      注销下线（两级 userIndex 来源自动兜底
 cqie-auth status              查询在线状态（退出码 0=在线, 1=离线, 2=不在校园网）
 cqie-auth doctor              环境诊断（外网/探测地址/认证服务器/运营商/配置）
 cqie-auth userindex [hex]     解码显示 userIndex
+cqie-auth reset [--force]     删除凭据配置文件（默认确认；下次 login 重新进入向导）
 ```
 
 常用选项：

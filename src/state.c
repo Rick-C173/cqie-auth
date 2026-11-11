@@ -29,7 +29,10 @@ static int mkdir_p(const char* path)
     {
         if (*p != '/' && *p != '\\') continue;
         *p = 0;
-        if (compat_mkdir(tmp) != 0)
+        /* Windows 盘根（"C:"）不是可创建目录：_mkdir 报错属正常，stat 也
+         * 未必成功（CRT 把 "C:" 当作该盘当前目录），直接放行 */
+        int drive_root = tmp[0] && tmp[1] == ':' && tmp[2] == 0;
+        if (!drive_root && compat_mkdir(tmp) != 0)
         {
             struct stat st;
             if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
@@ -82,7 +85,7 @@ int state_write(const char* name, const char* content)
     if (!state_path(path, sizeof path, name)) return 0;
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
 
-    FILE* f = fopen(tmp, "w");
+    FILE* f = fopen(tmp, "wb"); /* 二进制写：令牌文件跨平台统一 LF，避免 Windows 变 CRLF */
     if (!f)
     {
         LOG_WARN("无法写入 %s: %s", tmp, strerror(errno));

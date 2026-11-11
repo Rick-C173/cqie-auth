@@ -20,6 +20,38 @@ ok()  { PASS=$((PASS + 1)); printf '  [OK]   %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  [FAIL] %s\n' "$1"; [ $# -gt 1 ] && printf '         期望: %s\n         实际: %s\n' "$2" "$3"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Windows（Git Bash/MSYS2）本机跑自检：mingw 无 syslog.h，Winsock 需 -lws2_32
+# 且必须排在源文件之后。包装编译器注入平台差异；Linux/CI 不走此分支。
+ON_WIN=""
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ON_WIN=1 ;;
+esac
+# Windows：TMP 归一为盘符+正斜杠（C:/...）。反斜杠进 C 字符串会炸 \U 转义；
+# 纯 POSIX 路径则 exe 的 fopen 解析不到（CRT 按"当前盘:\tmp"理解）。
+if [ -n "$ON_WIN" ] && have cygpath; then
+    TMP=$(cygpath -m "$TMP")
+fi
+if [ -n "$ON_WIN" ]; then
+    cat > "$TMP/ccw" <<'WEOF'
+#!/bin/bash
+# mingw 编译包装：补 -D_WIN32_WINNT/-DUSE_SYSLOG=0；-lws2_32 插到源文件之后
+set -- "$@" -D_WIN32_WINNT=0x0601 -DUSE_SYSLOG=0
+pos=0; i=1
+for a in "$@"; do
+    case "$a" in *.c) pos=$i ;; esac
+    i=$((i + 1))
+done
+if [ "$pos" -gt 0 ]; then
+    set -- "${@:1:pos}" -lws2_32 "${@:pos+1}"
+fi
+exec cc "$@"
+WEOF
+    chmod +x "$TMP/ccw"
+    CC="$TMP/ccw"
+    export CC
+    echo "  (Windows 本机运行：编译经 $TMP/ccw 包装，syslog 场景与 0600 权限断言跳过)"
+fi
+
 echo "== 0. 编译自检工具 =="
 if ! ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -o "$TMP/harness" \
         "$ROOT/tests/harness.c" "$ROOT/src/bn.c" "$ROOT/src/rsa.c" "$ROOT/src/compat.c" "$ROOT/src/util.c" \
@@ -100,13 +132,22 @@ printf '%s' '{"version":"1.0","publicKeyExponent" :  "10001" ,"publicKeyModulus"
 printf '%s' '<select><option value="1">校园网</option><option value="9" selected>中国移动</option></select>' > "$TMP/opts.html"
 
 for s in "中国移动" "a b+c&d=e/f?g" "~-._AZaz09" ""; do
+    # Windows：exe 的 argv 经 ANSI 代码页（GBK）转换，中文按 UTF-8 比对必失败（平台固有限制）
+    if [ -n "$ON_WIN" ] && [ "$s" = "中国移动" ]; then
+        ok "urlencode \"中国移动\"（Windows argv 代码页限制，跳过）"
+        continue
+    fi
     cmp_sh "urlencode \"$s\"" "$("$TMP/harness" urlencode "$s")" "$(sh_urlencode "$s")"
 done
 cmp_sh "extract_field publicKeyExponent" "$("$TMP/harness" field publicKeyExponent "$TMP/info.json")" "$(sh_field publicKeyExponent "$TMP/info.json")"
 cmp_sh "extract_field publicKeyModulus"  "$("$TMP/harness" field publicKeyModulus  "$TMP/info.json")" "$(sh_field publicKeyModulus  "$TMP/info.json")"
 cmp_sh "extract_field 无该字段"           "$("$TMP/harness" field userIndex "$TMP/info.json")" "$(sh_field userIndex "$TMP/info.json")"
 cmp_sh "extract_field 冒号前有空格"       "$("$TMP/harness" field publicKeyExponent "$TMP/info2.json")" "$(sh_field publicKeyExponent "$TMP/info2.json")"
-cmp_sh "extract_service 命中"             "$("$TMP/harness" service 中国移动 "$TMP/opts.html")" "$(sh_service 中国移动 "$TMP/opts.html")"
+if [ -n "$ON_WIN" ]; then
+    ok "extract_service 命中（Windows argv 代码页限制，跳过）"
+else
+    cmp_sh "extract_service 命中"             "$("$TMP/harness" service 中国移动 "$TMP/opts.html")" "$(sh_service 中国移动 "$TMP/opts.html")"
+fi
 cmp_sh "extract_service 无匹配"           "$("$TMP/harness" service 电信 "$TMP/opts.html")" "$(sh_service 电信 "$TMP/opts.html")"
 cmp_sh "fetch_redirect_url"               "$("$TMP/harness" redirect "$TMP/probe.html")" "$(sh_redirect "$TMP/probe.html")"
 cmp_sh "extract_mac"                      "$("$TMP/harness" mac 'wlanuserip=1&mac=4f38&t=x')" "$(sh_mac 'wlanuserip=1&mac=4f38&t=x')"
@@ -189,9 +230,13 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT))==0 else 1)" && break
         [ "$(cat "$UI" 2>/dev/null | tr -d '\n')" = "$UIDX" ] \
             && ok "login: userIndex 写入 --state-dir 指定目录" \
             || bad "login: 状态文件内容不对" "$UIDX" "$(cat "$UI" 2>/dev/null)"
-        [ "$(stat -c '%a' "$UI" 2>/dev/null)" = "600" ] \
-            && ok "login: 状态文件权限 0600" \
-            || bad "login: 状态文件权限应为 0600" "600" "$(stat -c '%a' "$UI" 2>/dev/null)"
+        if [ -n "$ON_WIN" ]; then
+            ok "login: 状态文件权限 0600（Windows 无 POSIX 权限模型，跳过）"
+        elif [ "$(stat -c '%a' "$UI" 2>/dev/null)" = "600" ]; then
+            ok "login: 状态文件权限 0600"
+        else
+            bad "login: 状态文件权限应为 0600" "600" "$(stat -c '%a' "$UI" 2>/dev/null)"
+        fi
 
         # ---------- userindex：读状态文件/显式传 hex，解码输出 ----------
         OUT=$("$BIN" userindex --state-dir "$TMP/run" 2>/dev/null)
@@ -240,8 +285,13 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT))==0 else 1)" && break
         grep -q "在线探测" "$TMP/env.err" \
             && ok "CQIE_DEBUG=1 生效（stderr 有流程日志）" \
             || bad "CQIE_DEBUG=1 未生效" "stderr 含「在线探测」" "$(head -c 200 "$TMP/env.err")"
-        [ -d "$TMP/state-default" ] && ok "未指定 --state-dir 时使用编译期 STATE_DIR" \
-                                    || bad "未使用编译期 STATE_DIR" "$TMP/state-default 应存在" "不存在"
+        if [ -n "$ON_WIN" ]; then
+            ok "未指定 --state-dir 时使用编译期 STATE_DIR（Windows 走 exe 同目录便携布局，跳过）"
+        elif [ -d "$TMP/state-default" ]; then
+            ok "未指定 --state-dir 时使用编译期 STATE_DIR"
+        else
+            bad "未使用编译期 STATE_DIR" "$TMP/state-default 应存在" "不存在"
+        fi
         ( cd "$TMP" && CQIE_STATE_DIR="$TMP/state-env" "$BIN" status --state-dir "$TMP/run" ) >/dev/null 2>&1
         [ ! -d "$TMP/state-env" ] && ok "优先级: 命令行 --state-dir 覆盖 \$CQIE_STATE_DIR" \
             || bad "优先级不对: 命令行未覆盖环境变量"
@@ -497,7 +547,9 @@ fi
 # --------------------------------------------------- 3.9 --no-syslog 运行期开关
 echo
 echo "== 3.9 --no-syslog（运行期开关 syslog 状态行） =="
-if ! have python3; then
+if [ -n "$ON_WIN" ]; then
+    echo "  (Windows mingw 无 syslog.h，本场景跳过)"
+elif ! have python3; then
     echo "  (缺少 python3，跳过)"
 else
     NPORT=$((TEST_PORT++))
@@ -856,7 +908,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
         done
 
         # --setup + 管道输入：向导生成配置（密码一次 + 跳转地址回车 + 路径回车
-        # + portal 确认回车 + 运营商回车=自动），命令即验证：登录成功后才写盘
+        # + 运营商序号回车=留空自动尝试），命令即验证：登录成功后才写盘
         ( cd "$TMP" && printf 'wizuser\n%s\n\n\n\n' "$PWD_TEST" \
           | "$TMP/cqie-under-test" login --setup --config "$TMP/wizard.conf" --state-dir "$TMP/state-wizard" ) \
             >"$TMP/wiz.out" 2>"$TMP/wiz.err"
@@ -866,6 +918,9 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$WPORT))==0 else 1)" && break
         grep -q "认证成功" "$TMP/wiz.out" \
             && ok "向导: 写入后当场登录成功" \
             || bad "向导: 应继续登录成功" "含「认证成功」" "$(cat "$TMP/wiz.out")"
+        grep -q "选择运营商" "$TMP/wiz.out" \
+            && ok "向导: 探测运营商列表并展示序号菜单" \
+            || bad "向导: 应探测并展示运营商菜单" "含「选择运营商」" "$(cat "$TMP/wiz.out")"
         WJ=$(python3 -c "import json;j=json.load(open('$TMP/w_log.json'))['login'];print(j['userId'],j['service'])")
         [ "$WJ" = "wizuser 中国移动" ] \
             && ok "向导: 运营商留空时自动取列表第一项" \
@@ -920,8 +975,8 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
 
         # 场景 B：cqie-auth --setup 单独运行（无命令）-> 实测验证通过后写配置，exit 0
         # 配置路径指向不存在的嵌套目录，顺带验证父目录自动创建
-        # 喂入：user/密码/跳转回车/路径回车/运营商=校园网（5 行）
-        ( cd "$TMP" && printf 's2user\n%s\n\n\n\n校园网\n' "$PWD_TEST" \
+        # 喂入：user/密码/跳转回车/路径回车/序号 9(无效重问)/序号 1(中国移动)
+        ( cd "$TMP" && printf 's2user\n%s\n\n\n9\n1\n' "$PWD_TEST" \
           | "$TMP/cqie-under-test" --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2.out" 2>"$TMP/s2.err"
         RTS=$?
@@ -932,6 +987,11 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
         [ "$SU" = "1" ] \
             && ok "--setup 独立运行: 配置文件内容正确（含父目录自动创建）" \
             || bad "--setup 独立运行: 配置文件不对" "deep/nested/s2.conf 含 user=s2user" "$(head -1 "$TMP/deep/nested/s2.conf" 2>/dev/null)"
+        grep -q '^service=中国移动$' "$TMP/deep/nested/s2.conf" \
+            && grep -q "序号超出范围" "$TMP/s2.out" \
+            && ok "--setup 独立运行: 运营商序号选择（无效重问后按序号写入）" \
+            || bad "--setup 独立运行: 序号选择不对" "service=中国移动 且提示「序号超出范围」" \
+                   "$(grep '^service' "$TMP/deep/nested/s2.conf" 2>/dev/null) | $(grep -A1 '序号' "$TMP/s2.out" | head -2)"
 
         # 场景 C：写完的配置立刻可用（login 读它认证成功；复用场景 B 的 mock）
         ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
@@ -940,6 +1000,44 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
             && ok "--setup 独立运行: 生成的配置可直接登录" \
             || bad "--setup 独立运行: 登录应成功" "含「认证成功」" "$(cat "$TMP/s2_login.out")"
         kill $S2_MOCK 2>/dev/null
+
+        # 场景 D：探测到列表但全为空项（SERVICES="@"）-> 回退自由输入，
+        # 手动输入"校园网"，实测登录成功后写盘
+        S3PORT=$((TEST_PORT++))
+        cat > "$TMP/s3_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$S3PORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$S3PORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-s3"
+#define USER_ID         ""
+#define PASSWORD        ""
+EOF
+        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s3_override.h" \
+                -o "$TMP/cqie-s3" "$ROOT"/src/*.c 2>"$TMP/s3_cc.err"; then
+            python3 "$ROOT/tests/mock_ac.py" "$S3PORT" "$PWD_TEST" "$TMP/s3_log.json" "$TMP/key.txt" "@" \
+                >/dev/null 2>&1 &
+            S3_MOCK=$!
+            for _ in $(seq 1 50); do
+                python3 -c "import socket,sys
+s=socket.socket(); s.settimeout(0.2)
+sys.exit(0 if s.connect_ex(('127.0.0.1',$S3PORT))==0 else 1)" && break
+                sleep 0.1
+            done
+            # 喂入：user/密码/跳转回车/路径回车/运营商=校园网（回退自由输入）
+            ( cd "$TMP" && printf 's3user\n%s\n\n\n校园网\n' "$PWD_TEST" \
+              | "$TMP/cqie-s3" --setup --config "$TMP/s3.conf" --state-dir "$TMP/state-s3" ) \
+                >"$TMP/s3.out" 2>"$TMP/s3.err"
+            RT3=$?
+            [ "$RT3" = "0" ] && grep -q "未能获取运营商列表" "$TMP/s3.out" \
+                && grep -q '^service=校园网$' "$TMP/s3.conf" \
+                && ok "运营商回退: 列表为空时自由输入并实测写盘（exit 0）" \
+                || bad "运营商回退: 应回退自由输入并写盘" \
+                       "exit=0 含「未能获取运营商列表」且 service=校园网" \
+                       "exit=$RT3 $(tail -2 "$TMP/s3.out") $(grep '^service' "$TMP/s3.conf" 2>/dev/null)"
+            kill $S3_MOCK 2>/dev/null
+        else
+            bad "3.15 场景 D: 编译失败" "编译通过" "$(head -3 "$TMP/s3_cc.err")"
+        fi
     else
         bad "3.15: 编译失败" "编译通过" "$(head -3 "$TMP/s2_cc.err")"
     fi
@@ -1406,6 +1504,78 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$DPORT))==0 else 1)" && break
         kill $D_MOCK 2>/dev/null
     else
         bad "doctor: 编译失败" "编译通过" "$(head -3 "$TMP/d_cc.err")"
+    fi
+fi
+
+# --------------------------------------------------- 3.23 reset 删除配置文件
+echo
+echo "== 3.23 reset（删除凭据配置文件） =="
+if ! have python3; then
+    echo "  (缺少 python3，跳过)"
+else
+    RPORT=$((TEST_PORT++))
+    cat > "$TMP/r_override.h" <<EOF
+#define PORTAL_URL      "http://127.0.0.1:$RPORT/eportal"
+#define PROBE_URL       "http://127.0.0.1:$RPORT/probe"
+#define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
+#define STATE_DIR       "$TMP/state-reset"
+#define USER_ID         ""
+#define PASSWORD        ""
+EOF
+    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/r_override.h" \
+            -o "$TMP/cqie-reset" "$ROOT"/src/*.c 2>"$TMP/r_cc.err"; then
+        printf 'user=r1\npassword=p1\nservice=\n' > "$TMP/reset.conf"
+
+        # 场景 A：交互确认输入 n -> 取消，文件保留，exit 1
+        ( cd "$TMP" && printf 'n\n' | "$TMP/cqie-reset" reset --config "$TMP/reset.conf" --state-dir "$TMP/state-reset" ) \
+            >"$TMP/reset_a.out" 2>&1
+        RTA=$?
+        [ "$RTA" = "1" ] && grep -q "已取消" "$TMP/reset_a.out" && [ -f "$TMP/reset.conf" ] \
+            && ok "reset A: 确认输入 n -> 取消保留（exit 1）" \
+            || bad "reset A: 应取消且保留文件" "exit=1 文件存在" "exit=$RTA $(tail -2 "$TMP/reset_a.out")"
+
+        # 场景 B：交互确认输入 y -> 删除，exit 0
+        ( cd "$TMP" && printf 'y\n' | "$TMP/cqie-reset" reset --config "$TMP/reset.conf" --state-dir "$TMP/state-reset" ) \
+            >"$TMP/reset_b.out" 2>&1
+        RTB=$?
+        [ "$RTB" = "0" ] && grep -q "已删除" "$TMP/reset_b.out" && [ ! -f "$TMP/reset.conf" ] \
+            && ok "reset B: 确认输入 y -> 删除成功（exit 0）" \
+            || bad "reset B: 应删除文件" "exit=0 文件已删" "exit=$RTB $(tail -2 "$TMP/reset_b.out")"
+
+        # 场景 C：文件已不存在 -> 提示无需删除，exit 0
+        ( cd "$TMP" && "$TMP/cqie-reset" reset --config "$TMP/reset.conf" --state-dir "$TMP/state-reset" ) \
+            >"$TMP/reset_c.out" 2>&1
+        RTC=$?
+        [ "$RTC" = "0" ] && grep -q "无需删除" "$TMP/reset_c.out" \
+            && ok "reset C: 文件不存在 -> 幂等提示（exit 0）" \
+            || bad "reset C: 应提示无需删除" "exit=0" "exit=$RTC $(tail -2 "$TMP/reset_c.out")"
+
+        # 场景 D：--force 免确认直接删除，不读 stdin
+        printf 'user=r2\npassword=p2\nservice=\n' > "$TMP/reset2.conf"
+        ( cd "$TMP" && printf '' | "$TMP/cqie-reset" reset --config "$TMP/reset2.conf" --force --state-dir "$TMP/state-reset" ) \
+            >"$TMP/reset_d.out" 2>&1
+        RTD=$?
+        [ "$RTD" = "0" ] && grep -q "已删除" "$TMP/reset_d.out" && [ ! -f "$TMP/reset2.conf" ] \
+            && ok "reset D: --force 免确认删除（空 stdin 不卡住）" \
+            || bad "reset D: --force 应直接删除" "exit=0 文件已删" "exit=$RTD $(tail -2 "$TMP/reset_d.out")"
+
+        # 场景 E（仅 POSIX）：目录不可写 -> remove 失败，exit 1
+        if [ -n "$ON_WIN" ]; then
+            ok "reset E: 删除失败分支（Windows 权限模型不同，跳过）"
+        else
+            mkdir -p "$TMP/ro-dir"
+            printf 'user=r3\npassword=p3\nservice=\n' > "$TMP/ro-dir/reset3.conf"
+            chmod 555 "$TMP/ro-dir"
+            ( cd "$TMP" && "$TMP/cqie-reset" reset --config "$TMP/ro-dir/reset3.conf" --force --state-dir "$TMP/state-reset" ) \
+                >"$TMP/reset_e.out" 2>&1
+            RTE=$?
+            chmod 755 "$TMP/ro-dir"
+            [ "$RTE" = "1" ] && grep -q "删除失败" "$TMP/reset_e.out" \
+                && ok "reset E: 目录只读 -> 删除失败（exit 1）" \
+                || bad "reset E: 应报删除失败" "exit=1 含「删除失败」" "exit=$RTE $(tail -2 "$TMP/reset_e.out")"
+        fi
+    else
+        bad "3.23 reset: 编译失败" "编译通过" "$(head -3 "$TMP/r_cc.err")"
     fi
 fi
 

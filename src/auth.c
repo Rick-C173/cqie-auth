@@ -96,6 +96,8 @@ int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t ls
  * 生效的 portal**（不做 portal 自动发现）调 fetch_services。
  * 成功返回 1 且 list_out="A@B@C"；失败返回 0。
  */
+static const char* portal(void); /* 定义在下方；本函数在其前使用 */
+
 int auth_fetch_service_list(char* list_out, size_t lsz)
 {
     http_buf probe = {0};
