@@ -229,3 +229,4 @@
 - `--config`、`--portal`、`--state-dir`、`--interface` 源 IP 绑定、`--plain`、
   `--no-syslog`、`--dry-run`、`-v/-vv/-vvv` 等运行期选项
 - mock 端到端自检（`make check`）
+- **`make luci` 生成的 ipk 改为 OpenWrt 原生格式**（外层 gzip tar 内含 ./debian-binary / ./control.tar.gz / ./data.tar.gz）：此前误用 Debian ar 格式，路由器 opkg 报 "Malformed package file" 无法安装

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-# mkipk.py - 无 buildroot 组装 OpenWrt ipk（ar 格式）
+# mkipk.py - 无 buildroot 组装 OpenWrt ipk
 #
-# ipk = ar 归档，成员顺序固定：debian-binary、control.tar.gz、data.tar.gz。
+# OpenWrt 的 ipk（ipkg-build 约定）是**外层 gzip tar**，内含三个成员：
+#   ./debian-binary（内容 "2.0\n"）、./control.tar.gz、./data.tar.gz
+# 注意不是 Debian .deb 的 ar 格式——路由器上的 opkg 只认外层 tar.gz。
 # 用法：
 #   python3 mkipk.py --name luci-app-cqie-auth --version 1.9.0 --release 1 \
 #       --arch all --control build/luci-ipk/control --data build/luci-ipk/data \
@@ -17,8 +19,6 @@ import io
 import os
 import sys
 import tarfile
-
-AR_MAGIC = b"!<arch>\n"
 
 
 def is_exec(rel):
@@ -74,20 +74,20 @@ def gzip_compress(data):
     return buf.getvalue()
 
 
-def ar_member(name, data):
-    hdr = "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}".format(
-        name + "/", "0", "0", "0", "100644", str(len(data)))
-    hdr = hdr.encode("ascii") + b"`\n"
-    assert len(hdr) == 60, len(hdr)
-    pad = b"\n" if len(data) % 2 else b""
-    return hdr + data + pad
-
-
-def ar_write(out_path, members):
-    with open(out_path, "wb") as f:
-        f.write(AR_MAGIC)
+def outer_tar(members):
+    """OpenWrt ipk 的外壳是 gzip tar（ipkg-build 约定），内含三个成员：
+    ./debian-binary、./control.tar.gz、./data.tar.gz。"""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.GNU_FORMAT) as tf:
         for name, data in members:
-            f.write(ar_member(name, data))
+            ti = tarfile.TarInfo("./" + name)
+            ti.size = len(data)
+            ti.mtime = 0
+            ti.uid = ti.gid = 0
+            ti.uname = ti.gname = ""
+            ti.mode = 0o644
+            tf.addfile(ti, io.BytesIO(data))
+    return gzip_compress(buf.getvalue())
 
 
 def main():
@@ -104,12 +104,14 @@ def main():
     control = tar_gz(args.control)
     data = tar_gz(args.data)
 
-    ar_write(args.output, [
+    ipk = outer_tar([
         ("debian-binary", b"2.0\n"),
         ("control.tar.gz", control),
         ("data.tar.gz", data),
     ])
-    print("%s  (%d bytes, arch=%s)" % (args.output, os.path.getsize(args.output), args.arch))
+    with open(args.output, "wb") as f:
+        f.write(ipk)
+    print("%s  (%d bytes, arch=%s)" % (args.output, len(ipk), args.arch))
 
 
 if __name__ == "__main__":
