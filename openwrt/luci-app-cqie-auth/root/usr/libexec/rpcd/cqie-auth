@@ -1,17 +1,22 @@
 #!/bin/sh
 # /usr/libexec/rpcd/cqie-auth —— LuCI(luci-app-cqie-auth) 与 cqie-auth 命令行的桥梁。
 #
-# rpcd 以子进程方式调用本脚本：
-#   argv[1]="list"                 -> 输出 ubus 方法签名表（JSON）。此路径不得依赖
-#                                     任何外部文件/二进制——否则对象注册失败，
-#                                     LuCI 报 "Object not found"
-#   其余调用                        -> stdin 为 ubus 消息 JSON（jshn 解析），
-#                                     stdout 输出响应 JSON
+# rpcd 以子进程方式调用本脚本（rpcd plugin.c 协议）：
+#   argv: <脚本> list               -> 输出 ubus 方法签名表（JSON）。此路径不得依赖
+#                                      任何外部文件/二进制——否则对象注册失败，
+#                                      LuCI 报 "Object not found"
+#   argv: <脚本> call <方法名>      -> stdin 为 ubus 消息 JSON（jshn 解析），
+#                                      stdout 输出响应 JSON 对象
 # 由 luci-app-cqie-auth 的 ACL 授权访问。
 
 CONF="/etc/cqie-auth.conf"
 BIN="/usr/bin/cqie-auth"
 
+# rpcd exec 插件协议（rpcd plugin.c）：
+#   $1=list              -> 输出 ubus 方法签名表（方法名 -> {参数名: 类型串}，
+#                           类型由 JSON 值类型决定：字符串="string 参数"，
+#                           {} = 无参数；此路径不得依赖外部文件）
+#   $1=call, $2=<方法名> -> stdin 为 ubus 消息 JSON，stdout 输出响应 JSON 对象
 case "$1" in
 	list)
 		printf '{"get_status":{},"get_config":{},"get_logread":{},'
@@ -19,9 +24,15 @@ case "$1" in
 		printf '"do_login":{},"do_logout":{},"do_reauth":{},"do_reset":{}}'
 		exit 0
 	;;
+	call)
+		method="$2"
+	;;
+	*)
+		exit 0
+	;;
 esac
 
-# ---- 以下为真实调用路径：环境/前置检查只在此时进行 ----
+# ---- 方法分发（环境/前置检查只在真实调用时进行）----
 [ -x "$BIN" ] || { printf '{"error":"cqie-auth 未安装（/usr/bin/cqie-auth 缺失）"}'; exit 1; }
 . /usr/share/libubox/jshn.sh || { printf '{"error":"jshn.sh 缺失"}'; exit 1; }
 
@@ -40,7 +51,7 @@ run_bin() { # $@=完整命令行：执行并输出 {ok,rc,output}
 	json_dump
 }
 
-case "$1" in
+case "$method" in
 	get_status)
 		# cqie-auth status 退出码：0=在线 1=离线 2=不在校园网
 		"$BIN" status >/dev/null 2>&1
@@ -83,7 +94,7 @@ case "$1" in
 		json_dump
 	;;
 	do_login|do_logout|do_reauth)
-		run_bin "$BIN" "${1#do_}"
+		run_bin "$BIN" "${method#do_}"
 	;;
 	do_reset)
 		# 删除配置文件（reset --force 免确认；前端已二次确认）
