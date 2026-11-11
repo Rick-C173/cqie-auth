@@ -55,7 +55,7 @@ OWRT_BIN := dist/cqie-auth.owrt
 LUCI_APP     := openwrt/luci-app-cqie-auth
 LUCI_NAME    := luci-app-cqie-auth
 LUCI_VERSION := 1.9.0
-LUCI_RELEASE := 1
+LUCI_RELEASE := 2
 LUCI_IPK     := dist/$(LUCI_NAME)_$(LUCI_VERSION)-$(LUCI_RELEASE)_all.ipk
 
 .PHONY: all clean strip check openwrt openwrt-size linux windows luci FORCE

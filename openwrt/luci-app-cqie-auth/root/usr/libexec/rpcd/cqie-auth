@@ -2,7 +2,9 @@
 # /usr/libexec/rpcd/cqie-auth —— LuCI(luci-app-cqie-auth) 与 cqie-auth 命令行的桥梁。
 #
 # rpcd 以子进程方式调用本脚本：
-#   argv[1]="list"                 -> 输出 ubus 方法签名表（JSON）
+#   argv[1]="list"                 -> 输出 ubus 方法签名表（JSON）。此路径不得依赖
+#                                     任何外部文件/二进制——否则对象注册失败，
+#                                     LuCI 报 "Object not found"
 #   其余调用                        -> stdin 为 ubus 消息 JSON（jshn 解析），
 #                                     stdout 输出响应 JSON
 # 由 luci-app-cqie-auth 的 ACL 授权访问。
@@ -10,8 +12,17 @@
 CONF="/etc/cqie-auth.conf"
 BIN="/usr/bin/cqie-auth"
 
-[ -x "$BIN" ] || { printf '{"error":"cqie-auth 未安装（/usr/bin/cqie-auth 缺失）"}'; exit 1; }
+case "$1" in
+	list)
+		printf '{"get_status":{},"get_config":{},"get_logread":{},'
+		printf '"set_config":{"user":"str","password":"str","service":"str","portal":"str","probe":"str"},'
+		printf '"do_login":{},"do_logout":{},"do_reauth":{},"do_reset":{}}'
+		exit 0
+	;;
+esac
 
+# ---- 以下为真实调用路径：环境/前置检查只在此时进行 ----
+[ -x "$BIN" ] || { printf '{"error":"cqie-auth 未安装（/usr/bin/cqie-auth 缺失）"}'; exit 1; }
 . /usr/share/libubox/jshn.sh || { printf '{"error":"jshn.sh 缺失"}'; exit 1; }
 
 conf_get() { # $1=key：读配置值（首个非注释赋值行，保留原样）
@@ -30,12 +41,6 @@ run_bin() { # $@=完整命令行：执行并输出 {ok,rc,output}
 }
 
 case "$1" in
-	list)
-		# ubus 方法签名（rpcd exec 插件约定：类型为 str）
-		printf '{"get_status":{},"get_config":{},"get_logread":{},'
-		printf '"set_config":{"user":"str","password":"str","service":"str","portal":"str","probe":"str"},'
-		printf '"do_login":{},"do_logout":{},"do_reauth":{},"do_reset":{}}'
-	;;
 	get_status)
 		# cqie-auth status 退出码：0=在线 1=离线 2=不在校园网
 		"$BIN" status >/dev/null 2>&1

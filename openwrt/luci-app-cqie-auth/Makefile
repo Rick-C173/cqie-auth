@@ -8,7 +8,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-cqie-auth
 PKG_VERSION:=1.9.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 LUCI_TITLE:=LuCI support for cqie-auth（锐捷 ePortal 校园网认证）
 LUCI_DESCRIPTION:=状态轮询 / 一键上下线 / 账号配置编辑，经 rpcd 调用 cqie-auth 命令行。需先安装 cqie-auth。
