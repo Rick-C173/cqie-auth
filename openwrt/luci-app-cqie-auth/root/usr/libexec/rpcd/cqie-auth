@@ -1,0 +1,96 @@
+#!/bin/sh
+# /usr/libexec/rpcd/cqie-auth —— LuCI(luci-app-cqie-auth) 与 cqie-auth 命令行的桥梁。
+#
+# rpcd 以子进程方式调用本脚本：
+#   argv[1]="list"                 -> 输出 ubus 方法签名表（JSON）
+#   其余调用                        -> stdin 为 ubus 消息 JSON（jshn 解析），
+#                                     stdout 输出响应 JSON
+# 由 luci-app-cqie-auth 的 ACL 授权访问。
+
+CONF="/etc/cqie-auth.conf"
+BIN="/usr/bin/cqie-auth"
+
+[ -x "$BIN" ] || { printf '{"error":"cqie-auth 未安装（/usr/bin/cqie-auth 缺失）"}'; exit 1; }
+
+. /usr/share/libubox/jshn.sh || { printf '{"error":"jshn.sh 缺失"}'; exit 1; }
+
+conf_get() { # $1=key：读配置值（首个非注释赋值行，保留原样）
+	sed -n "s/^[[:space:]]*$1=[[:space:]]*//p" "$CONF" 2>/dev/null | head -n 1
+}
+
+run_bin() { # $@=完整命令行：执行并输出 {ok,rc,output}
+	local out rc
+	out="$("$@" 2>&1)"
+	rc=$?
+	json_init
+	json_add_boolean ok $([ "$rc" = "0" ] && echo 1 || echo 0)
+	json_add_int rc "$rc"
+	json_add_string output "$(printf '%s\n' "$out" | tail -n 8)"
+	json_dump
+}
+
+case "$1" in
+	list)
+		# ubus 方法签名（rpcd exec 插件约定：类型为 str）
+		printf '{"get_status":{},"get_config":{},"get_logread":{},'
+		printf '"set_config":{"user":"str","password":"str","service":"str","portal":"str","probe":"str"},'
+		printf '"do_login":{},"do_logout":{},"do_reauth":{},"do_reset":{}}'
+	;;
+	get_status)
+		# cqie-auth status 退出码：0=在线 1=离线 2=不在校园网
+		"$BIN" status >/dev/null 2>&1
+		rc=$?
+		json_init
+		json_add_int code "$rc"
+		json_dump
+	;;
+	get_config)
+		json_init
+		json_add_string user "$(conf_get user)"
+		json_add_string service "$(conf_get service)"
+		json_add_string portal "$(conf_get portal)"
+		json_add_string probe "$(conf_get probe)"
+		json_add_boolean has_password $([ -n "$(conf_get password)" ] && echo 1 || echo 0)
+		json_dump
+	;;
+	set_config)
+		# password 留空 = 沿用旧密码（明文不回传前端）
+		json_load "$(cat)" || { printf '{"error":"请求解析失败"}'; exit 1; }
+		json_get_var user user;      json_get_var password password
+		json_get_var service service; json_get_var portal portal; json_get_var probe probe
+		[ -n "$user" ] || { printf '{"error":"user 不能为空"}'; exit 1; }
+		[ -z "$password" ] && password="$(conf_get password)"
+		conf_tmp="$CONF.tmp"
+		{
+			printf '# cqie-auth 凭据配置（LuCI 生成；示例见 cqie-auth.conf.example）\n'
+			if [ -n "$portal" ]; then printf 'portal=%s\n' "$portal"; fi
+			if [ -n "$probe" ];  then printf 'probe=%s\n'  "$probe"; fi
+			printf 'user=%s\n' "$user"
+			printf 'password=%s\n' "$password"
+			printf 'service=%s\n' "$service"
+		} > "$conf_tmp" && chmod 600 "$conf_tmp" && mv "$conf_tmp" "$CONF" || {
+			rm -f "$conf_tmp"
+			printf '{"error":"写入配置失败（/etc 不可写?）"}'
+			exit 1
+		}
+		json_init
+		json_add_boolean ok 1
+		json_dump
+	;;
+	do_login|do_logout|do_reauth)
+		run_bin "$BIN" "${1#do_}"
+	;;
+	do_reset)
+		# 删除配置文件（reset --force 免确认；前端已二次确认）
+		run_bin "$BIN" reset --force
+	;;
+	get_logread)
+		json_init
+		json_add_string output "$(logread 2>/dev/null | grep cqie-auth | tail -n 20)"
+		json_dump
+	;;
+	*)
+		printf '{"error":"unknown method"}'
+		exit 1
+	;;
+esac

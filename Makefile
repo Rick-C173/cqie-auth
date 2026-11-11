@@ -47,7 +47,7 @@ OWRT_LIBS   := -lpthread
 
 OWRT_BIN := cqie-auth.owrt
 
-.PHONY: all clean strip check openwrt openwrt-size linux windows deploy
+.PHONY: all clean strip check openwrt openwrt-size linux windows
 
 all: $(BIN)
 
@@ -111,9 +111,6 @@ windows:
 	@echo "--- 产物 ---"
 	@ls -l $(WIN_BIN)
 	@file $(WIN_BIN)
-
-deploy: openwrt
-	sh deploy.sh $(HOST)
 
 clean:
 	rm -rf $(BUILD) $(BIN) $(OWRT_BIN) $(WIN_BIN) cqie-auth-nossl.owrt

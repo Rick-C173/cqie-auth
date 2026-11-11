@@ -106,6 +106,20 @@ cqie-auth reauth        # 先注销再重新认证（换 IP / 会话卡死时用
 */30 * * * * /usr/bin/cqie-auth login
 ```
 
+## OpenWrt 包与 LuCI 网页界面
+
+仓库 `openwrt/` 目录提供两个 buildroot 包定义，把 `openwrt/cqie-auth`、
+`openwrt/luci-app-cqie-auth` 拷进 buildroot `package/`（或 luci feed 的
+`applications/`），menuconfig 勾选后编译 ipk 安装：
+
+- `cqie-auth`：按 tag 从 GitHub 拉源码交叉编译，装到 `/usr/bin/cqie-auth`
+- `luci-app-cqie-auth`：网页界面（`网络 -> 校园网认证`）——状态轮询、
+  一键 上线/下线/重新认证、账号配置编辑（密码不回显）、最近认证日志。
+  经 rpcd 子进程调用命令行，详见
+  [openwrt/luci-app-cqie-auth/README.md](openwrt/luci-app-cqie-auth/README.md)
+
+路由器重启后自动认证可配 procd/cron，示例见 LuCI README 与下方 crontab。
+
 ## 命令与选项
 
 ```

@@ -3,23 +3,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
-## [1.9.0] - 2026-11-04
+## [1.9.0] - 2026-11-11
 
 ### Added
 - **`reset` 子命令：删除当前凭据配置文件**。默认交互确认（文件内含明文密码），
   `--force` 免确认可直接进脚本；文件不存在时幂等提示（exit 0）。删除后凭据缺失，
   下次 login 在终端上会重新进入配置向导。状态文件（userIndex）不动，注销仍可用
-- **向导运营商改为"探测一次 + 序号选择"**：收完用户名/密码后探测运营商列表，
-  编号展示供选择（输入 `1`/`2`/`3` 即可），**回车=留空**——不配置，登录时
-  自动逐项尝试、成功后写回实际命中值（原有 pending_write 自愈机制不变）。
-  兼容直接输入名称（列表外自定义值/离线场景），列表获取失败时可直接手输名称
-  或留空跳过
 - **check.sh 支持 Windows（Git Bash/MinGW）本机运行**：编译包装补
   `-DUSE_SYSLOG=0 -lws2_32`；syslog 劫持场景与 0600 权限断言按平台跳过；
   `http_resolve_host_limited` 补 Windows 退化实现（直接 getaddrinfo，
   兑现 http.h 文档行为），harness 可在 Windows 链接
+- `openwrt/` 目录：cqie-auth 与 luci-app-cqie-auth 的 OpenWrt buildroot 包定义
+  （LuCI 网页界面：状态轮询/一键上下线/配置编辑，经 rpcd 调用命令行）
 
 ### Fixed
+- 向导探测运营商列表前让本轮输入的用户名在会话生效——getServices 表单携带
+  username，首次运行时原实现以空账号拉列表，真机可能拿不到列表
+- 运营商列表拆分跳过空项（服务端偶发 `a@@b` 时不再出现空名字菜单项）
+- `auth_fetch_service_list` 在 `portal()` 定义前调用导致编译失败（C99 隐式
+  声明是 error），补前置声明
 - **Windows 上 login/reauth/logout 一律报"不在校园网"**：`connect_timeout`
   是进程首个网络调用时无人执行过 WSAStartup，`socket()` 恒 WSANOTINITIALISED；
   现在其 Windows 分支自行 `sock_init()`（幂等）
@@ -27,6 +29,18 @@
   `mkdir_p` 把盘根段（"C:"）当目录创建且 stat "C:" 失败；现跳过盘根段检查
 - 状态文件（userIndex）改为二进制写，跨平台统一 LF（Windows 不再产生 CRLF；
   读取端 file_read_trim 本就兼容两种）
+- 向导"未能获取运营商列表"提示补充 `cqie-auth doctor` 诊断指引；
+  Makefile 移除引用已出库脚本的 `deploy` 死 target；check.sh 的 PWD_TEST
+  提前到全局定义（某前置依赖缺失跳过 section 3 时不再让 set -u 崩溃）
+
+## [1.8.1] - 2026-11-11
+
+### Added
+- **向导运营商改为"探测一次 + 序号选择"**：收完用户名/密码后探测运营商列表，
+  编号展示供选择（输入 `1`/`2`/`3` 即可），**回车=留空**——不配置，登录时
+  自动逐项尝试、成功后写回实际命中值（原有 pending_write 自愈机制不变）。
+  兼容直接输入名称（列表外自定义值/离线场景），列表获取失败时可直接手输名称
+  或留空跳过
 
 ## [1.8.0] - 2026-09-22
 

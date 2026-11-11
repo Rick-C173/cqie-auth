@@ -405,7 +405,8 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
             if (nitems)
                 printf("选择运营商 (1-%d, 回车=留空自动, 也可直接输入名称): ", nitems);
             else
-                printf("未能获取运营商列表。直接输入名称，或回车=留空自动: ");
+                printf("未能获取运营商列表（不在校园网或探测地址失效?可运行 cqie-auth doctor 定位）。"
+                       "直接输入名称，或回车=留空自动: ");
             fflush(stdout);
             char tmp[256] = "";
             if (!read_line(tmp, sizeof tmp, 0)) goto eof;

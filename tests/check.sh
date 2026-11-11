@@ -16,6 +16,9 @@ trap '[ "${KEEP_TMP:-0}" = "1" ] || rm -rf "$TMP"; [ -n "${MOCK_PID:-}" ] && kil
 
 PASS=0
 FAIL=0
+# 测试凭据：全局定义（PWD_TEST 在多个场景引用；某前置依赖缺失跳过 section 3
+# 时若此处未定义，后续引用会在 set -u 下让整个脚本崩溃）
+PWD_TEST="test-pass-123"
 ok()  { PASS=$((PASS + 1)); printf '  [OK]   %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  [FAIL] %s\n' "$1"; [ $# -gt 1 ] && printf '         期望: %s\n         实际: %s\n' "$2" "$3"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -179,7 +182,6 @@ if ! have python3 || ! python3 -c 'import cryptography' 2>/dev/null; then
     echo "  (缺少 python3 或 cryptography 模块，跳过)"
 else
     PORT=$((TEST_PORT++))
-    PWD_TEST="test-pass-123"
     # 测试凭据全部来自编译期注入；把默认配置文件指向不存在路径，
     # 防止读入开发机 /etc/cqie-auth.conf 的真实凭据（配置文件优先级更高）
     export CQIE_CONFIG="$TMP/no-such-cqie-auth.conf"

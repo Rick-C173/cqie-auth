@@ -1,0 +1,21 @@
+{
+	"admin/network/cqie-auth": {
+		"title": "校园网认证",
+		"order": 65,
+		"icon": "network.svg",
+		"action": { "type": "firstchild" },
+		"depends": {
+			"acl": [ "luci-app-cqie-auth" ]
+		}
+	},
+	"admin/network/cqie-auth/status": {
+		"title": "认证状态",
+		"order": 1,
+		"action": { "type": "view", "path": "cqie-auth/status" }
+	},
+	"admin/network/cqie-auth/settings": {
+		"title": "账号设置",
+		"order": 2,
+		"action": { "type": "view", "path": "cqie-auth/settings" }
+	}
+}
