@@ -118,6 +118,11 @@ cqie-auth reauth        # 先注销再重新认证（换 IP / 会话卡死时用
   经 rpcd 子进程调用命令行，详见
   [openwrt/luci-app-cqie-auth/README.md](openwrt/luci-app-cqie-auth/README.md)
 
+不想搭 buildroot？开发机直接 `make luci` 即可在仓库根生成
+`luci-app-cqie-auth_*.ipk`（纯脚本 all 包，零依赖组装，Windows/WSL 通用），
+scp 到路由器 `opkg install` 即用；`cqie-auth` 二进制仍走 `make openwrt`
+或 Release 下载。
+
 路由器重启后自动认证可配 procd/cron，示例见 LuCI README 与下方 crontab。
 
 ## 命令与选项

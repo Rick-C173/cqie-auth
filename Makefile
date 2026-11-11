@@ -47,7 +47,16 @@ OWRT_LIBS   := -lpthread
 
 OWRT_BIN := cqie-auth.owrt
 
-.PHONY: all clean strip check openwrt openwrt-size linux windows
+# ====== LuCI app 打包（无需 buildroot；python3 组装 ar 格式 ipk） ======
+# 产物：luci-app-cqie-auth_<版本>-<release>_all.ipk（纯脚本，任意架构通用）。
+# opkg 安装后即得网页界面；cqie-auth 二进制仍走 make openwrt / Release 下载。
+LUCI_APP     := openwrt/luci-app-cqie-auth
+LUCI_NAME    := luci-app-cqie-auth
+LUCI_VERSION := 1.9.0
+LUCI_RELEASE := 1
+LUCI_IPK     := $(LUCI_NAME)_$(LUCI_VERSION)-$(LUCI_RELEASE)_all.ipk
+
+.PHONY: all clean strip check openwrt openwrt-size linux windows luci FORCE
 
 all: $(BIN)
 
@@ -64,6 +73,24 @@ strip: all
 # 开发机上的自检：RSA 与原脚本逐字节比对 + 字符串解析比对 + 模拟 AC 端到端
 check: all
 	bash tests/check.sh
+
+# 打包 luci-app-cqie-auth ipk：root/ -> data、htdocs/ -> data/www（对齐 luci.mk 安装映射）
+luci: $(LUCI_IPK)
+
+$(LUCI_IPK): FORCE
+	@rm -rf build/luci-ipk
+	@mkdir -p build/luci-ipk/data/www build/luci-ipk/control
+	@cp -r $(LUCI_APP)/root/. build/luci-ipk/data/
+	@cp -r $(LUCI_APP)/htdocs/. build/luci-ipk/data/www/
+	@printf 'Package: $(LUCI_NAME)\nVersion: $(LUCI_VERSION)-$(LUCI_RELEASE)\nArchitecture: all\nMaintainer: Rick_C173 <rick_c173@qq.com>\nDepends: luci-base\nDescription: LuCI web interface for cqie-auth (Ruijie ePortal campus auth)\n' > build/luci-ipk/control/control
+	@python3 scripts/mkipk.py \
+		--name $(LUCI_NAME) --version $(LUCI_VERSION) --release $(LUCI_RELEASE) \
+		--arch all --control build/luci-ipk/control --data build/luci-ipk/data -o $@
+	@rm -rf build/luci-ipk
+	@echo "--- 产物 ---"
+	@ls -l $@
+
+FORCE:
 
 # 交叉编译出 OpenWrt 可运行的静态二进制（单步编译，LTO 才能跨文件优化）
 # STAGING_DIR 必须指向 target 目录，工具链靠它定位目标 sysroot
@@ -113,4 +140,4 @@ windows:
 	@file $(WIN_BIN)
 
 clean:
-	rm -rf $(BUILD) $(BIN) $(OWRT_BIN) $(WIN_BIN) cqie-auth-nossl.owrt
+	rm -rf $(BUILD) $(BIN) $(OWRT_BIN) $(WIN_BIN) $(LUCI_IPK) cqie-auth-nossl.owrt
