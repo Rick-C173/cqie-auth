@@ -366,9 +366,57 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
         return 1;
     }
 
-    printf("运营商名 (回车=留空，登录时自动逐项尝试): ");
+    /* 运营商选择：探测列表后按序号选（留空=登录时逐项尝试并自愈写回） */
+    printf("正在获取运营商列表...\n");
     fflush(stdout);
-    if (!read_line(w->svc, sizeof w->svc, 0)) goto eof;
+    {
+        char dlist[1024] = "";
+        char items[16][128];
+        int nitems = 0;
+        if (auth_fetch_service_list(dlist, sizeof dlist))
+        {
+            const char* p = dlist;
+            while (*p && nitems < 16)
+            {
+                const char* e = strchr(p, '@');
+                size_t len = e ? (size_t)(e - p) : strlen(p);
+                size_t c = len < sizeof items[0] - 1 ? len : sizeof items[0] - 1;
+                memcpy(items[nitems], p, c);
+                items[nitems][c] = 0;
+                nitems++;
+                if (!e) break;
+                p = e + 1;
+            }
+            for (int i = 0; i < nitems; i++)
+                printf("      %d. %s\n", i + 1, items[i]);
+        }
+        for (;;)
+        {
+            if (nitems)
+                printf("选择运营商 (1-%d, 回车=留空自动, 也可直接输入名称): ", nitems);
+            else
+                printf("未能获取运营商列表。直接输入名称，或回车=留空自动: ");
+            fflush(stdout);
+            char tmp[256] = "";
+            if (!read_line(tmp, sizeof tmp, 0)) goto eof;
+            if (!tmp[0]) break; /* 留空：登录时逐项尝试 */
+            char* endp = NULL;
+            long nsel = strtol(tmp, &endp, 10);
+            if (nitems && endp && *endp == 0 && nsel >= 1 && nsel <= nitems)
+            {
+                snprintf(w->svc, sizeof w->svc, "%s", items[nsel - 1]);
+                break;
+            }
+            if (nitems && endp && *endp == 0)
+            {
+                printf("序号超出范围（1-%d），请重新选择。\n", nitems);
+                continue;
+            }
+            /* 非数字：按手输名称处理（兼容列表外的自定义值/离线场景） */
+            snprintf(w->svc, sizeof w->svc, "%s", tmp);
+            break;
+        }
+    }
     return 1;
 
 eof:

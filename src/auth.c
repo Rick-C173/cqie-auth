@@ -91,6 +91,35 @@ int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t ls
     return ok;
 }
 
+/*
+ * 仅拉取运营商列表（向导序号选择用）：请求探测地址触发劫持，用**当前
+ * 生效的 portal**（不做 portal 自动发现）调 fetch_services。
+ * 成功返回 1 且 list_out="A@B@C"；失败返回 0。
+ */
+int auth_fetch_service_list(char* list_out, size_t lsz)
+{
+    http_buf probe = {0};
+    long code = http_req_ex(probe_url(), NULL, NULL, HTTP_QUIET, &probe);
+    int ok = 0;
+    char* redir = (code >= 0 && probe.data && probe.data[0])
+                      ? fetch_redirect_url(probe.data) : NULL;
+    if (redir && *redir)
+    {
+        char* q = strchr(redir, '?');
+        if (q && q[1])
+        {
+            char qs[2048] = "";
+            snprintf(qs, sizeof qs, "%s", q + 1);
+            list_out[0] = 0;
+            if (fetch_services(qs, portal(), list_out, lsz) && list_out[0])
+                ok = 1;
+        }
+    }
+    free(redir);
+    free(probe.data);
+    return ok;
+}
+
 static const char* portal(void) { return g_portal ? g_portal : PORTAL_URL; }
 
 /* 拼 portal 的接口地址：<portal>/InterFace.do?method=xxx */

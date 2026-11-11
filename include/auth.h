@@ -27,6 +27,12 @@ void auth_set_plain(int on);
 int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t lsz);
 
 /*
+ * 仅拉取运营商列表（向导序号选择用）：请求探测地址触发劫持，用当前生效的
+ * portal 调 fetch_services。成功返回 1 且 list_out="A@B@C"；失败返回 0。
+ */
+int auth_fetch_service_list(char* list_out, size_t lsz);
+
+/*
  * doctor - 环境诊断子命令（只读：不加锁、不登录、不写文件）。
  * 逐环检查外网连通/探测地址/认证服务器/运营商列表/配置完整性，
  * verdict 直接给下一步建议。返回 0=全部正常，1=存在异常。
