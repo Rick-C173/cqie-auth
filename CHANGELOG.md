@@ -33,6 +33,14 @@
   Makefile 移除引用已出库脚本的 `deploy` 死 target；check.sh 的 PWD_TEST
   提前到全局定义（某前置依赖缺失跳过 section 3 时不再让 set -u 崩溃）
 
+### Changed
+- **构建产物统一输出到根目录 `dist/`**（对象文件 / 二进制 / ipk），`make clean`
+  一把清空；`make luci` 产物同步移入 `dist/`
+- 删除生产代码不再使用的 `extract_service`（旧版 eportal HTML option 解析，
+  运营商获取已由 getServices 接口取代）及其 harness 子命令与测试
+- 清理 main.c 头注释重复行、Makefile `clean` 里无 target 产出的
+  `cqie-auth-nossl.owrt` 残留
+
 ## [1.8.1] - 2026-11-11
 
 ### Added

@@ -4,7 +4,6 @@
 //   harness rsa <e_hex> <n_hex> <pwd> <mac>
 //   harness urlencode <string>
 //   harness field <field> <page_file>
-//   harness service <name> <page_file>
 //   harness redirect <page_file>
 //   harness mac <query_string>
 //   harness hexdec <hex_string>
@@ -61,14 +60,6 @@ int main(int argc, char** argv)
         char out[512] = "";
         char* page = slurp(argv[3]);
         if (page && extract_field(page, argv[2], out, sizeof out)) puts(out);
-        return 0;
-    }
-    if (!strcmp(cmd, "service"))
-    {
-        if (argc < 4) return 2;
-        char out[512] = "";
-        char* page = slurp(argv[3]);
-        if (page && extract_service(page, argv[2], out, sizeof out)) puts(out);
         return 0;
     }
     if (!strcmp(cmd, "redirect"))

@@ -42,17 +42,18 @@ http://connectivitycheck.platform.hicloud.com/generate_204
 
 ## 平台支持
 
-| 平台 | 构建方式 | 产物 |
+| 平台 | 构建方式 | 产物（统一在 `dist/`） |
 | --- | --- | --- |
-| OpenWrt (aarch64) | `make openwrt` | `cqie-auth.owrt`（静态链接，零依赖） |
-| Linux x86_64 | `make linux` 或 `make` | `cqie-auth` |
-| Windows x64 | `make windows`（mingw-w64） | `cqie-auth.exe` |
+| OpenWrt (aarch64) | `make openwrt` | `dist/cqie-auth.owrt`（静态链接，零依赖） |
+| Linux x86_64 | `make linux` 或 `make` | `dist/cqie-auth` |
+| Windows x64 | `make windows`（mingw-w64） | `dist/cqie-auth.exe` |
+| LuCI app（任意平台） | `make luci` | `dist/luci-app-cqie-auth_*.ipk` |
 
 ## 快速开始（OpenWrt）
 
 ```sh
 # 1. 部署（开发机上；也可从 Release 页直接下载 cqie-auth.owrt）
-scp cqie-auth.owrt root@192.168.1.1:/usr/bin/cqie-auth
+scp dist/cqie-auth.owrt root@192.168.1.1:/usr/bin/cqie-auth
 ssh root@192.168.1.1 'chmod 755 /usr/bin/cqie-auth && mkdir -p /etc/cqie-auth && chmod 700 /etc/cqie-auth'
 
 # 2. 在路由器上运行 login——首次会进入交互式向导
@@ -161,8 +162,11 @@ cqie-auth reset [--force]     删除凭据配置文件（默认确认；下次 l
 make            # 本机 Linux
 make windows    # Windows x64（需 x86_64-w64-mingw32-gcc）
 make openwrt    # OpenWrt aarch64（需 musl 交叉工具链，交叉编译变量见 Makefile）
+make luci       # 打包 LuCI app 的 ipk（纯脚本 all 包，零额外依赖）
 make check      # 端到端自检（需 python3 + cryptography，开发机用）
 ```
+
+所有产物统一落在根目录 `dist/` 下（`make clean` 一把清空）。
 
 编译期可用 `-D` 覆盖一切默认值（`USER_ID` / `PASSWORD` / `PORTAL_URL` 等），
 但发布版凭据默认为空，推荐用配置文件。全部编译期选项见

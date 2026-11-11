@@ -52,40 +52,6 @@ int extract_field(const char* page, const char* field, char* out, size_t outsz)
     return i > 0;
 }
 
-int extract_service(const char* page, const char* name, char* out, size_t outsz)
-{
-    const char* p = page;
-    while ((p = strstr(p, "<option")) != NULL)
-    {
-        const char* gt = strchr(p, '>');
-        const char* end = gt ? strstr(gt, "</option>") : NULL;
-        if (gt && end)
-        {
-            size_t tl = (size_t)(end - (gt + 1));
-            if (tl < 256)
-            {
-                char text[256];
-                memcpy(text, gt + 1, tl);
-                text[tl] = 0;
-                if (strstr(text, name))
-                {
-                    const char* v = strstr(p, "value=\"");
-                    if (v && v < gt)
-                    {
-                        v += 7;
-                        size_t i = 0;
-                        while (*v && *v != '"' && i + 1 < outsz) out[i++] = *v++;
-                        out[i] = 0;
-                        return 1;
-                    }
-                }
-            }
-        }
-        p += 7;
-    }
-    return 0;
-}
-
 char* fetch_redirect_url(const char* page)
 {
     const char* p = strstr(page, "location.href='");

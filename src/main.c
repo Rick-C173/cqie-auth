@@ -6,7 +6,6 @@
 //   cqie-auth logout [index]   注销（等价原 cqie-exit.sh）
 //   cqie-auth status           仅检测在线状态（0=在线, 1=离线, 2=不在校园网）
 //   cqie-auth doctor           环境诊断（逐环检查外网/探测地址/portal/运营商/配置）
-//   cqie-auth doctor           环境诊断（逐环检查外网/探测地址/portal/运营商/配置）
 //   cqie-auth userindex [hex]  输出解码后的 userIndex（省略参数时读状态文件）
 //
 // 动作 = 子命令，修饰 = 选项（-v/--log/--dry-run/--plain…），与 git/systemctl 的习惯一致。

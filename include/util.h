@@ -12,9 +12,6 @@ char* urlencode(const char* s);
 /* 从 JSON 文本中取 "field":"value"，成功返回 1（字段名假定唯一，与接口一致） */
 int extract_field(const char* page, const char* field, char* out, size_t outsz);
 
-/* 在 <option value="xxx">名称</option> 中按名称匹配取 value，成功返回 1 */
-int extract_service(const char* page, const char* name, char* out, size_t outsz);
-
 /* 从认证页 JS 中提取 location.href='...'，找不到返回 NULL（malloc） */
 char* fetch_redirect_url(const char* page);
 

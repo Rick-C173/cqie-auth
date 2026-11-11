@@ -8,8 +8,10 @@ STRIP   ?= strip
 CFLAGS  += -O2 -Wall -Wextra -std=c99 -ffunction-sections -fdata-sections
 LDFLAGS += -Wl,--gc-sections
 
-BIN     := cqie-auth
-BUILD   := build
+# 所有构建产物统一落在根目录的 dist/ 下（对象文件/二进制/ipk），
+# make clean 一把清空。
+BIN     := dist/cqie-auth
+BUILD   := dist/build
 
 SRCS    := src/bn.c src/rsa.c src/http_min.c src/util.c src/log.c src/state.c \
            src/compat.c src/auth.c src/main.c
@@ -45,7 +47,7 @@ OWRT_LDFLAGS := -static -flto -Wl,--gc-sections -Wl,-O2 -Wl,--as-needed \
 
 OWRT_LIBS   := -lpthread
 
-OWRT_BIN := cqie-auth.owrt
+OWRT_BIN := dist/cqie-auth.owrt
 
 # ====== LuCI app 打包（无需 buildroot；python3 组装 ar 格式 ipk） ======
 # 产物：luci-app-cqie-auth_<版本>-<release>_all.ipk（纯脚本，任意架构通用）。
@@ -54,7 +56,7 @@ LUCI_APP     := openwrt/luci-app-cqie-auth
 LUCI_NAME    := luci-app-cqie-auth
 LUCI_VERSION := 1.9.0
 LUCI_RELEASE := 1
-LUCI_IPK     := $(LUCI_NAME)_$(LUCI_VERSION)-$(LUCI_RELEASE)_all.ipk
+LUCI_IPK     := dist/$(LUCI_NAME)_$(LUCI_VERSION)-$(LUCI_RELEASE)_all.ipk
 
 .PHONY: all clean strip check openwrt openwrt-size linux windows luci FORCE
 
@@ -78,15 +80,15 @@ check: all
 luci: $(LUCI_IPK)
 
 $(LUCI_IPK): FORCE
-	@rm -rf build/luci-ipk
-	@mkdir -p build/luci-ipk/data/www build/luci-ipk/control
-	@cp -r $(LUCI_APP)/root/. build/luci-ipk/data/
-	@cp -r $(LUCI_APP)/htdocs/. build/luci-ipk/data/www/
-	@printf 'Package: $(LUCI_NAME)\nVersion: $(LUCI_VERSION)-$(LUCI_RELEASE)\nArchitecture: all\nMaintainer: Rick_C173 <rick_c173@qq.com>\nDepends: luci-base\nDescription: LuCI web interface for cqie-auth (Ruijie ePortal campus auth)\n' > build/luci-ipk/control/control
+	@rm -rf dist/luci-ipk
+	@mkdir -p dist/luci-ipk/data/www dist/luci-ipk/control
+	@cp -r $(LUCI_APP)/root/. dist/luci-ipk/data/
+	@cp -r $(LUCI_APP)/htdocs/. dist/luci-ipk/data/www/
+	@printf 'Package: $(LUCI_NAME)\nVersion: $(LUCI_VERSION)-$(LUCI_RELEASE)\nArchitecture: all\nMaintainer: Rick_C173 <rick_c173@qq.com>\nDepends: luci-base\nDescription: LuCI web interface for cqie-auth (Ruijie ePortal campus auth)\n' > dist/luci-ipk/control/control
 	@python3 scripts/mkipk.py \
 		--name $(LUCI_NAME) --version $(LUCI_VERSION) --release $(LUCI_RELEASE) \
-		--arch all --control build/luci-ipk/control --data build/luci-ipk/data -o $@
-	@rm -rf build/luci-ipk
+		--arch all --control dist/luci-ipk/control --data dist/luci-ipk/data -o $@
+	@rm -rf dist/luci-ipk
 	@echo "--- 产物 ---"
 	@ls -l $@
 
@@ -95,13 +97,14 @@ FORCE:
 # 交叉编译出 OpenWrt 可运行的静态二进制（单步编译，LTO 才能跨文件优化）
 # STAGING_DIR 必须指向 target 目录，工具链靠它定位目标 sysroot
 openwrt:
+	@mkdir -p dist
 	STAGING_DIR=$(OWRT_STG) $(OWRT_CC) $(OWRT_CFLAGS) $(OWRT_LDFLAGS) \
 	    -o $(OWRT_BIN) $(SRCS) $(OWRT_LIBS)
 	$(OWRT_STRIP) --strip-all $(OWRT_BIN)
 	-$(OWRT_SSTRIP) $(OWRT_BIN)
 	@echo "--- 产物 ---"
 	@ls -l $(OWRT_BIN)
-	@file $(OWRT_BIN)
+	@command -v file >/dev/null 2>&1 && file $(OWRT_BIN) || true
 	@echo "--- 动态依赖（应为空）---"
 	@readelf -d $(OWRT_BIN) | grep -E 'NEEDED|SONAME' || echo "(无 NEEDED 条目 = 纯静态)"
 
@@ -112,6 +115,7 @@ openwrt-size: openwrt
 # 本机 Linux 构建：make linux（单步编译等价于 make，便于 CI 一步出二进制）
 # ==========================================================================
 linux:
+	@mkdir -p dist
 	$(CC) $(CFLAGS) $(LDFLAGS) -Iinclude -o $(BIN) $(SRCS) $(LDLIBS)
 
 # ==========================================================================
@@ -130,14 +134,15 @@ WIN_CFLAGS := -Iinclude -Os -flto -ffunction-sections -fdata-sections \
               -DUSE_SYSLOG=0 -DSTATE_DIR='"."' -DCONFIG_FILE='"cqie-auth.conf"'
 WIN_LDFLAGS := -static -flto -Wl,--gc-sections -s
 WIN_LIBS   := -lws2_32
-WIN_BIN    := cqie-auth.exe
+WIN_BIN    := dist/cqie-auth.exe
 
 windows:
 	command -v $(WIN_CC) >/dev/null || { echo "缺少 mingw-w64: sudo apt install gcc-mingw-w64-x86-64"; exit 1; }
+	@mkdir -p dist
 	$(WIN_CC) $(WIN_CFLAGS) $(WIN_LDFLAGS) -o $(WIN_BIN) $(SRCS) $(WIN_LIBS)
 	@echo "--- 产物 ---"
 	@ls -l $(WIN_BIN)
-	@file $(WIN_BIN)
+	@command -v file >/dev/null 2>&1 && file $(WIN_BIN) || true
 
 clean:
-	rm -rf $(BUILD) $(BIN) $(OWRT_BIN) $(WIN_BIN) $(LUCI_IPK) cqie-auth-nossl.owrt
+	rm -rf dist

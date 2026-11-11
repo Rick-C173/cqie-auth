@@ -120,7 +120,6 @@ sh_urlencode() {
     | head -c -1
 }
 sh_field()   { printf '%s' "$(cat "$2")" | tr ',' '\n' | sed -n "s/.*\"$1\"[^:]*:[ ]*\"\([^\"]*\)\".*/\1/p" | head -n1; }
-sh_service() { printf '%s' "$(cat "$2")" | LC_ALL=C grep -o '<option[^>]*>[^<]*</option>' | LC_ALL=C grep -F "$1" | head -n1 | sed -n 's/.*value="\([^"]*\)".*/\1/p'; }
 sh_redirect(){ sed -n "s/.*location\.href='\([^']*\)'.*/\1/p" "$1" | head -n1; }
 sh_mac()     { printf '&%s' "$1" | sed -n 's/.*&mac=\([^&]*\).*/\1/p'; }
 sh_hexdec()  { printf '%s' "$1" | xxd -r -p | awk '{print}'; }
@@ -132,7 +131,6 @@ cmp_sh() { # $1=名称 $2=C 输出 $3=shell 输出
 printf '%s' "<html><script>location.href='http://10.253.3.84/eportal/index.jsp?wlanuserip=1.2.3.4&wlanacname=AC&ssid=s&nasip=10.0.0.1&mac=4f3839eba7a850e699faecafa73feb81&t=wireless-v2';</script></html>" > "$TMP/probe.html"
 printf '%s' '{"result":"success","publicKeyExponent":"010001","publicKeyModulus":"aabb","serviceList":[{"serviceName":"中国移动","serviceValue":"9"}],"message":""}' > "$TMP/info.json"
 printf '%s' '{"version":"1.0","publicKeyExponent" :  "10001" ,"publicKeyModulus": "cafe","x":"y"}' > "$TMP/info2.json"
-printf '%s' '<select><option value="1">校园网</option><option value="9" selected>中国移动</option></select>' > "$TMP/opts.html"
 
 for s in "中国移动" "a b+c&d=e/f?g" "~-._AZaz09" ""; do
     # Windows：exe 的 argv 经 ANSI 代码页（GBK）转换，中文按 UTF-8 比对必失败（平台固有限制）
@@ -146,12 +144,6 @@ cmp_sh "extract_field publicKeyExponent" "$("$TMP/harness" field publicKeyExpone
 cmp_sh "extract_field publicKeyModulus"  "$("$TMP/harness" field publicKeyModulus  "$TMP/info.json")" "$(sh_field publicKeyModulus  "$TMP/info.json")"
 cmp_sh "extract_field 无该字段"           "$("$TMP/harness" field userIndex "$TMP/info.json")" "$(sh_field userIndex "$TMP/info.json")"
 cmp_sh "extract_field 冒号前有空格"       "$("$TMP/harness" field publicKeyExponent "$TMP/info2.json")" "$(sh_field publicKeyExponent "$TMP/info2.json")"
-if [ -n "$ON_WIN" ]; then
-    ok "extract_service 命中（Windows argv 代码页限制，跳过）"
-else
-    cmp_sh "extract_service 命中"             "$("$TMP/harness" service 中国移动 "$TMP/opts.html")" "$(sh_service 中国移动 "$TMP/opts.html")"
-fi
-cmp_sh "extract_service 无匹配"           "$("$TMP/harness" service 电信 "$TMP/opts.html")" "$(sh_service 电信 "$TMP/opts.html")"
 cmp_sh "fetch_redirect_url"               "$("$TMP/harness" redirect "$TMP/probe.html")" "$(sh_redirect "$TMP/probe.html")"
 cmp_sh "extract_mac"                      "$("$TMP/harness" mac 'wlanuserip=1&mac=4f38&t=x')" "$(sh_mac 'wlanuserip=1&mac=4f38&t=x')"
 cmp_sh "extract_mac 多次出现取最后"       "$("$TMP/harness" mac 'mac=aaa&x=1&mac=bbb')" "$(sh_mac 'mac=aaa&x=1&mac=bbb')"
