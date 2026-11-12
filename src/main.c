@@ -235,12 +235,11 @@ static int config_update_key(const char* path, const char* key, const char* val)
  */
 static int read_line(char* buf, size_t sz, int echo_off)
 {
-    int ok;
     if (echo_off)
     {
         compat_echo(0);
     }
-    ok = (fgets(buf, (int)sz, stdin) != NULL) ? 1 : 0;
+    int ok = (fgets(buf, (int)sz, stdin) != NULL) ? 1 : 0;
     if (ok)
     {
         size_t n = strlen(buf);
@@ -545,7 +544,7 @@ static const char* opt_val(int argc, char** argv, int* i, const char* name)
         {
             return a + n + 1U;
         }
-        if (a[n] == '\0' && *i + 1U < argc)
+        if (a[n] == '\0' && *i + 1 < argc)
         {
             return argv[++(*i)];
         }

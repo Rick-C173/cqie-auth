@@ -123,7 +123,7 @@ int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz)
         {
             m = p;
         }
-        p += nl;
+        p = p + nl;
         p = strstr(p, name);
     }
     if (!m)
