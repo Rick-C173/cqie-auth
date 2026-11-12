@@ -148,7 +148,7 @@ void log_emit(int level, const char* fmt, ...)
         size_t n = strlen(msg);
         if (n >= sizeof g_first_err)
         {
-            n = sizeof g_first_err - 1;
+            n = sizeof(g_first_err) - 1U;
         }
         (void)memcpy(g_first_err, msg, n);
         g_first_err[n] = 0;

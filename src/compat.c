@@ -76,8 +76,8 @@ void compat_console_utf8(void)
 static int compat_exe_dir(char* out, size_t n)
 {
     wchar_t wpath[600];
-    DWORD len = GetModuleFileNameW(NULL, wpath, (DWORD)(sizeof wpath / sizeof *wpath));
-    if (len == 0 || len >= sizeof wpath / sizeof *wpath)
+    DWORD len = GetModuleFileNameW(NULL, wpath, (DWORD)(sizeof(wpath)/ sizeof(*wpath)));
+    if (len == 0 || len >= sizeof(wpath)/ sizeof(*wpath))
     {
         return 0;
     }

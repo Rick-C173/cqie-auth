@@ -175,7 +175,7 @@ static int config_update_key(const char* path, const char* key, const char* val)
                     (void)fclose(in);
                     return 0;
                 }
-                (void)snprintf(body + body_len, sizeof body - body_len, "%s", add);
+                (void)snprintf(body + body_len, sizeof(body)- body_len, "%s", add);
                 replaced = 1;
                 continue;
             }
@@ -186,7 +186,7 @@ static int config_update_key(const char* path, const char* key, const char* val)
             (void)fclose(in);
             return 0;
         }
-        (void)snprintf(body + body_len, sizeof body - body_len, "%s", line);
+        (void)snprintf(body + body_len, sizeof(body)- body_len, "%s", line);
     }
     (void)fclose(in);
     }
@@ -194,9 +194,9 @@ static int config_update_key(const char* path, const char* key, const char* val)
     {
         size_t n = strlen(body);
         char add[600];
-        if (n && body[n - 1] != '\n')
+        if (n && body[n - 1U] != '\n')
         {
-            (void)snprintf(body + n, sizeof body - n, "\n");
+            (void)snprintf(body + n, sizeof(body)- n, "\n");
         }
         (void)snprintf(add, sizeof add, "%s=%s\n", key, val);
         n = strlen(body);
@@ -204,7 +204,7 @@ static int config_update_key(const char* path, const char* key, const char* val)
         {
             return 0;
         }
-        (void)snprintf(body + n, sizeof body - n, "%s", add);
+        (void)snprintf(body + n, sizeof(body)- n, "%s", add);
     }
     char tmp[640];
     (void)snprintf(tmp, sizeof tmp, "%s.tmp", path);
@@ -244,7 +244,7 @@ static int read_line(char* buf, size_t sz, int echo_off)
     if (ok)
     {
         size_t n = strlen(buf);
-        while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        while (n && (buf[n - 1U] == '\n' || buf[n - 1U] == '\r'))
         {
             n--;
     buf[n] = 0;
@@ -280,7 +280,7 @@ static void make_parent_dirs(const char* path)
         return;
     }
     *slash = 0;
-    for (size_t di = 1; dir[di] != 0; di++)
+    for (size_t di = 1; dir[di] != '\0'; di++)
     {
         if (dir[di] == '/')
         {
@@ -387,7 +387,7 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
         {
             goto eof;
         }
-        got_pass = (w->pass[0] != 0) ? 1 : 0;
+        got_pass = (w->pass[0] != '\0') ? 1 : 0;
         if (!got_pass)
         {
             (void)printf("密码不能为空。\n");
@@ -460,7 +460,7 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
                 size_t len = e ? (size_t)(e - p) : strlen(p);
                 if (len) /* 跳过空项（服务端偶发 "a@@b"/"@"），空名字不是合法运营商 */
                 {
-                    size_t c = len < sizeof items[0] - 1 ? len : sizeof items[0] - 1;
+                    size_t c = (len < sizeof(items[0]) - 1U) ? len : sizeof(items[0]) - 1U;
                     (void)memcpy(items[nitems], p, c);
                     items[nitems][c] = 0;
                     nitems++;
@@ -543,9 +543,9 @@ static const char* opt_val(int argc, char** argv, int* i, const char* name)
     {
         if (a[n] == '=')
         {
-            return a + n + 1;
+            return a + n + 1U;
         }
-        if (a[n] == 0 && *i + 1 < argc)
+        if (a[n] == '\0' && *i + 1U < argc)
         {
             return argv[++(*i)];
         }
@@ -604,14 +604,14 @@ static int load_config_file(const char* path,
             v++; /* 去值前导空白 */
         }
         size_t kl = strlen(k);
-        while (kl && (k[kl - 1] == ' ' || k[kl - 1] == '\t'))
+        while (kl && (k[kl - 1U] == ' ' || k[kl - 1U] == '\t'))
         {
             kl--;
     k[kl] = 0;
         }
         size_t vl = strlen(v);
         while (vl &&
-               (v[vl - 1] == '\n' || v[vl - 1] == '\r' || v[vl - 1] == ' ' || v[vl - 1] == '\t'))
+               (v[vl - 1U] == '\n' || v[vl - 1U] == '\r' || v[vl - 1U] == ' ' || v[vl - 1U] == '\t'))
         {
             vl--;
     v[vl] = 0;
@@ -1144,7 +1144,7 @@ int main(int argc, char** argv)
             const char* env_svc = getenv("CQIE_SERVICE");
             const char* eff = auth_last_service();
             if ((!env_svc || !env_svc[0]) &&
-                (cfg_svc_raw[0] == 0 || strcmp(cfg_svc_raw, eff) != 0))
+                (cfg_svc_raw[0] == '\0' || strcmp(cfg_svc_raw, eff) != 0))
             {
                 if (config_update_key(cfg_path, "service", eff))
                 {

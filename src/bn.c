@@ -9,17 +9,17 @@ static void bn_zero(bn* a) { (void)memset(a, 0, sizeof *a); }
 
 static int hexval(int c)
 {
-    if (c >= '0' && c <= '9')
+    if ((unsigned int)c >= 0x30U && (unsigned int)c <= 0x39U) /* '0'..'9' */
     {
-        return c - '0';
+        return (int)c - 0x30;
     }
-    if (c >= 'a' && c <= 'f')
+    if ((unsigned int)c >= 0x61U && (unsigned int)c <= 0x66U) /* 'a'..'f' */
     {
-        return c - 'a' + 10;
+        return (int)c - 0x61 + 10;
     }
-    if (c >= 'A' && c <= 'F')
+    if ((unsigned int)c >= 0x41U && (unsigned int)c <= 0x46U) /* 'A'..'F' */
     {
-        return c - 'A' + 10;
+        return (int)c - 0x41 + 10;
     }
     return -1;
 }
@@ -30,21 +30,21 @@ int bn_from_hex(bn* a, const char* hex)
     size_t n = strlen(hex);
     /* 一个 limb 4 字节 = 8 个十六进制字符，最多 8*BN_LIMBS = 512 个字符
      * (BN_LIMBS=64 → 容量 2048 bit；真机模数 256 字符 = 1024 bit，只占低一半 limb) */
-    if (n == 0 || n > 8 * BN_LIMBS)
+    if (n == 0U || n > 8U * (size_t)BN_LIMBS)
     {
         return 0;
     }
-    size_t nbytes = (n + 1) / 2;
+    size_t nbytes = (n + 1U) / 2U;
     for (size_t j = 0; j < nbytes; j++)
     {
         /* j: 从最低字节起 */
-        int lv = hexval((unsigned char)hex[n - 1 - 2 * j]);
-        int hv = (n >= 2 * j + 2) ? hexval((unsigned char)hex[n - 2 - 2 * j]) : 0;
+        int lv = hexval((unsigned char)hex[n - 1U - 2U * j]);
+        int hv = (n >= 2U * j + 2U) ? hexval((unsigned char)hex[n - 2U - 2U * j]) : 0;
         if (lv < 0 || hv < 0)
         {
             return 0;
         }
-        a->d[j / 4] |= (uint32_t)((hv << 4) | lv) << ((j % 4) * 8);
+        a->d[j / 4U] |= (uint32_t)((hv << 4) | lv) << ((j % 4U) * 8U);
     }
     return 1;
 }
@@ -69,7 +69,7 @@ static void bn_sub(bn* a, const bn* b)
     {
         uint64_t t = (uint64_t)a->d[i] - b->d[i] - borrow;
         a->d[i] = (uint32_t)t;
-        borrow = (t >> 32) & 1;
+        borrow = (t >> 32U) & 1U;
     }
 }
 
@@ -166,7 +166,7 @@ void bn_to_hex(const bn* a, char* out, size_t outsz)
     if (a->d[top] == 0)
     {
         /* 整个数为 0 */
-        if (outsz < 2)
+        if (outsz < 2U)
         {
             return;
         }

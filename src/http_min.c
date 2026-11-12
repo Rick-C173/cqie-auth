@@ -39,7 +39,7 @@
 #endif
 
 #define HDR_CAP   4096            /* 响应头上限，AC 的头很短 */
-#define BODY_MAX  (256 * 1024)    /* 响应体防御性上限 */
+#define BODY_MAX  (256U * 1024U)    /* 响应体防御性上限 */
 #define MAX_HOPS  5               /* 跟随跳转的最大次数 */
 
 /* jQuery $.ajax 的默认 Accept（登录页 JS 就是这么发的） */
@@ -86,7 +86,7 @@ static long remain_ms(long deadline)
 /* 往 b 追加数据（保持 NUL 结尾） */
 static int buf_append(http_buf* b, const void* p, size_t n)
 {
-    char* nd = realloc(b->data, b->len + n + 1);
+    char* nd = realloc(b->data, b->len + n + 1U);
     if (!nd)
     {
         return 0;
@@ -119,7 +119,7 @@ static int parse_url(const char* url, url_t* u)
     }
 
     size_t hl = (size_t)((colon ? colon : host_end) - p);
-    if (hl == 0 || hl >= sizeof u->host)
+    if (hl == 0U || hl >= sizeof(u)->host)
     {
         return 0;
     }
@@ -249,7 +249,7 @@ int http_resolve_host_limited(const char* host, long timeout_ms,
         return -1; /* 超时/管道错误：按解析失败处理 */
     }
     char ip[64]= {0};
-    ssize_t n = read(fds[0], ip, sizeof ip - 1);
+    ssize_t n = read(fds[0], ip, sizeof(ip) - 1U);
     (void)close(fds[0]);
     if (n <= 0)
     {
@@ -521,21 +521,21 @@ static ssize_t read_headers(sock_t fd, char* buf, size_t cap, long deadline, siz
     for (;;)
     {
         /* 只重扫新增部分的边界，避免每轮从头 O(n^2) */
-        size_t start = scanned > 3 ? scanned - 3 : 0;
-        for (size_t i = start; i + 4 <= n; i++)
+        size_t start = (scanned > 3U) ? scanned - 3U : 0U;
+        for (size_t i = start; i + 4U <= n; i++)
         {
             if (strncmp(buf + i, "\r\n\r\n", 4) == 0)
             {
-                *hdr_end = i + 4;
+                *hdr_end = i + 4U;
                 return (ssize_t)n;
             }
         }
         scanned = n;
-        if (n + 1 >= cap)
+        if (n + 1U >= cap)
         {
             return -1; /* 头太大，放弃 */
         }
-        ssize_t r = recv_some(fd, buf + n, cap - 1 - n, deadline);
+        ssize_t r = recv_some(fd, buf + n, cap - 1U - n, deadline);
         if (r <= 0)
         {
             return -1; /* 超时，或对端提前关闭 */
@@ -564,13 +564,13 @@ static int hdr_get(const char* hdr, const char* name, char* out, size_t outsz)
         }
         if (strncasecmp(p, name, nl) == 0 && p[nl] == ':')
         {
-            const char* v = p + nl + 1;
+            const char* v = p + nl + 1U;
             while (v < e2 && (*v == ' ' || *v == '\t'))
             {
                 v++;
             }
             size_t i = 0;
-            while (v < e2 && i + 1 < outsz)
+            while (v < e2 && i + 1U < outsz)
             {
                 out[i] = *v;
         i++;
@@ -697,15 +697,15 @@ static int dechunk(const char* in, size_t inlen, http_buf* out)
             int v;
             if (c >= '0' && c <= '9')
             {
-                v = (int)c - '0';
+                v = (int)c - (int)'0';
             }
             else if (c >= 'a' && c <= 'f')
             {
-                v = (int)c - 'a' + 10;
+                v = (int)c - (int)'a' + 10;
             }
             else if (c >= 'A' && c <= 'F')
             {
-                v = (int)c - 'A' + 10;
+                v = (int)c - (int)'A' + 10;
             }
             else
             {
@@ -815,8 +815,8 @@ static long http_do(const char* url, const char* post, const char* referer,
             (void)snprintf(hostport, sizeof hostport, "%s:%d", u.host, u.port);
         }
 
-        size_t pn = post ? strlen(post) : 0;
-        size_t cap = 2048 + (referer ? strlen(referer) : 0) + pn;
+        size_t pn = post ? strlen(post) : 0U;
+        size_t cap = 2048U + (referer ? strlen(referer) : 0U) + pn;
         char* req = malloc(cap);
         if (!req)
         {
@@ -897,7 +897,7 @@ static long http_do(const char* url, const char* post, const char* referer,
          * hdr_end-2 落在结尾 \r\n\r\n 的前半，截在这里既不破坏头文本，
          * 也不碰 body（hdr_get 的循环遇到 NUL 自然结束）。
          */
-        hdr[hdr_end - 2] = 0;
+        hdr[hdr_end - 2U] = 0;
 
         code = parse_status(hdr);
         if (code < 0)
@@ -971,7 +971,7 @@ static long http_do(const char* url, const char* post, const char* referer,
 
         long cost = log_tick_ms() - t0;
         LOG_DEBUG("[http] %s %s -> HTTP %ld, %zu 字节, %ld ms",
-                  post ? "POST" : "GET", cur, code, out ? out->len : 0, cost);
+                  post ? "POST" : "GET", cur, code, out ? out->len : 0U, cost);
         LOG_TRACE("[http] 请求头: User-Agent=%s%s", user_agent(),
                   referer ? " + Referer" : "");
         if (referer)
@@ -1209,8 +1209,8 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
     }
 
     static const char* PROBE_204[] = {PROBE_204_LIST}; /* 8.9: 仅本函数使用 */
-    size_t n = sizeof PROBE_204 / sizeof *PROBE_204;
-    if (n > PROBE_MAX)
+    size_t n = sizeof(PROBE_204)/ sizeof(*PROBE_204);
+    if (n > (size_t)PROBE_MAX)
     {
         n = PROBE_MAX;
     }
@@ -1305,7 +1305,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
                     continue;
                 }
                 pfds[m].fd = (int)p->fd;
-                pfds[m].events = p->phase == 2 ? POLLIN : POLLOUT;
+                pfds[m].events = (p->phase == 2) ? POLLIN : POLLOUT;
                 pfds[m].revents = 0;
                 idx[m] = i;
                 m++;

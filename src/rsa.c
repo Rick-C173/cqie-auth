@@ -35,7 +35,7 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
 
 #if RSA_PAD_PER_BLOCK
     /* 每块补足到模数的十六进制宽度 */
-    size_t width = strlen(n_hex) + (strlen(n_hex) & 1);
+    size_t width = strlen(n_hex) + (strlen(n_hex) & 1U);
 #endif
 
     size_t used = 0;
@@ -71,11 +71,11 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
         bn_to_hex(&r, hex, sizeof hex);
         size_t hl = strlen(hex);
 #if RSA_PAD_PER_BLOCK
-        size_t blkpad = hl < width ? width - hl : 0;
+        size_t blkpad = (hl < width) ? width - hl : 0U;
 #else
         size_t blkpad = 0;
 #endif
-        if (used + blkpad + hl + 1 >= outsz)
+        if (used + blkpad + hl + 1U >= outsz)
         {
             return 0;
         }
@@ -84,20 +84,20 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
             (void)memset(out + used, '0', blkpad);
             used += blkpad;
         }
-        (void)memcpy(out + used, hex, hl + 1);
+        (void)memcpy(out + used, hex, hl + 1U);
         used += hl;
     }
 
 #if !RSA_PAD_PER_BLOCK
     /* 整体左侧补 '0'，长度补到 4 的倍数（对应原脚本里的 awk 补零） */
-    size_t pad = (4 - used % 4) % 4;
+    size_t pad = (4U - used % 4U) % 4U;
     if (pad)
     {
-        if (used + pad + 1 > outsz)
+        if (used + pad + 1U > outsz)
         {
             return 0;
         }
-        (void)memmove(out + pad, out, used + 1);
+        (void)memmove(out + pad, out, used + 1U);
         (void)memset(out, '0', pad);
     }
 #endif

@@ -19,7 +19,7 @@ char* urlencode(const char* s)
      * 旧写法逻辑正确，但分析器无法证明两次 isalnum/strchr 判定一致，
      * 会报 security.ArrayBound；上界分配让安全性可直接推导。 */
     size_t n = strlen(s);
-    char* o = malloc(n * 3 + 1);
+    char* o = malloc(n * 3U + 1U);
     if (!o)
     {
         return NULL;
@@ -39,7 +39,7 @@ char* urlencode(const char* s)
     w++;
             *w = hx[ch >> 4];
         w++;
-            *w = hx[ch & 15];
+            *w = hx[ch & 15U];
         w++;
         }
     }
@@ -71,14 +71,14 @@ int extract_field(const char* page, const char* field, char* out, size_t outsz)
     }
     p++;
     size_t i = 0;
-    while (*p && *p != '"' && i + 1 < outsz)
+    while (*p && *p != '"' && i + 1U < outsz)
     {
         out[i] = *p;
         i++;
         p++;
     }
     out[i] = 0;
-    return i > 0;
+    return i > 0U;
 }
 
 char* fetch_redirect_url(const char* page)
@@ -94,7 +94,7 @@ char* fetch_redirect_url(const char* page)
     {
         return NULL;
     }
-    char* r = malloc((size_t)(q - p) + 1);
+    char* r = malloc((size_t)(q - p) + 1U);
     if (!r)
     {
         return NULL;
@@ -130,16 +130,16 @@ int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz)
     {
         return 0;
     }
-    const char* v = m + nl + 1;
+    const char* v = m + nl + 1U;
     size_t i = 0;
-    while (*v && *v != '&' && i + 1 < outsz)
+    while (*v && *v != '&' && i + 1U < outsz)
     {
         out[i] = *v;
         i++;
         v++;
     }
     out[i] = 0;
-    return i > 0;
+    return i > 0U;
 }
 
 size_t hex_decode(const char* s, char* out, size_t outsz)
@@ -149,7 +149,7 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
     int stop = 0;
     for (const char* p = s; *p && !stop; p++)
     {
-        unsigned char c = (unsigned char)*p;
+        char c = *p; /* 10.4: 与字符字面量同类别比较；算术处显式 (int) */
         if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
         {
             continue; /* xxd 跳过空白 */
@@ -157,15 +157,15 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
         int v;
         if (c >= '0' && c <= '9')
         {
-            v = (int)c - '0';
+            v = (int)c - (int)'0';
         }
         else if (c >= 'a' && c <= 'f')
         {
-            v = (int)c - 'a' + 10;
+            v = (int)c - (int)'a' + 10;
         }
         else if (c >= 'A' && c <= 'F')
         {
-            v = (int)c - 'A' + 10;
+            v = (int)c - (int)'A' + 10;
         }
         else
         {
@@ -178,7 +178,7 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
         }
         else
         {
-            if (n + 1 >= outsz)
+            if (n + 1U >= outsz)
             {
                 stop = 1; /* 输出缓冲区满 */
             }
@@ -202,7 +202,7 @@ void hex_print_decode(const char* s)
     /* 实际输入是 userIndex（hex，约 54 字符 -> 27 字节），2048 已足够。
      * 原来是 8192 的 static（.bss），白白占着镜像。 */
     static char buf[2048];
-    size_t n = hex_decode(s, buf, sizeof buf - 1);
+    size_t n = hex_decode(s, buf, sizeof(buf) - 1U);
     if (n)
     {
         (void)fwrite(buf, 1, n, stdout);
@@ -217,7 +217,7 @@ int file_read_trim(const char* path, char* out, size_t outsz)
     {
         return 0;
     }
-    size_t n = fread(out, 1, outsz - 1, f);
+    size_t n = fread(out, 1U, outsz - 1U, f);
     (void)fclose(f);
     out[n] = 0;
     char* s = out;
@@ -233,7 +233,7 @@ int file_read_trim(const char* path, char* out, size_t outsz)
     }
     if (s != out)
     {
-        (void)memmove(out, s, strlen(s) + 1);
+        (void)memmove(out, s, strlen(s) + 1U);
     }
     return 1;
 }

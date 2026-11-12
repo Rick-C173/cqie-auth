@@ -88,7 +88,7 @@ int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t ls
         /* portal 基址 = 认证页 URL 截断 /index.jsp 之前 */
         const char* cut = strstr(redir, "/index.jsp");
         size_t len = cut ? (size_t)(cut - redir) : strlen(redir);
-        size_t c = len < psz - 1 ? len : psz - 1;
+        size_t c = (len < psz - 1U) ? len : psz - 1U;
         (void)memcpy(portal_out, redir, c);
         portal_out[c] = 0;
         auth_set_portal(portal_out); /* 发现即生效 */
@@ -166,7 +166,7 @@ static int portal_host_port(char* host, size_t hsz, int* port)
     }
     p += 7;
     size_t i = 0;
-    while (*p && *p != '/' && *p != ':' && i + 1 < hsz)
+    while (*p && *p != '/' && *p != ':' && i + 1U < hsz)
     {
         host[i] = *p;
         i++;
@@ -212,13 +212,13 @@ static void log_form(int level, const char* tag, const char* body)
     char out[3072];
     size_t o = 0;
     const char* p = body;
-    while (*p && o + 1 < sizeof out)
+    while (*p && o + 1U < (sizeof out))
     {
         if (!strncmp(p, "password=", 9))
         {
             const char* end = strchr(p, '&');
-            size_t len = end ? (size_t)(end - p) - 9 : strlen(p) - 9;
-            o += (size_t)snprintf(out + o, sizeof out - o,
+            size_t len = end ? (size_t)(end - p) - 9U : strlen(p) - 9U;
+            o += (size_t)snprintf(out + o, sizeof(out)- o,
                                   "password=<%u 字符,已打码>", (unsigned)len);
             if (!end)
             {
@@ -241,14 +241,14 @@ static void log_form(int level, const char* tag, const char* body)
  */
 static void ui_decode(const char* raw, char* out, size_t outsz)
 {
-    size_t n = hex_decode(raw, out, outsz - 1);
+    size_t n = hex_decode(raw, out, outsz - 1U);
     out[n] = 0;
     if (!n)
     { /* 解不出内容：原样输出（放不下则截断，仅用于显示） */
         size_t m = strlen(raw);
         if (m >= outsz)
         {
-            m = outsz - 1;
+            m = outsz - 1U;
         }
         (void)memcpy(out, raw, m);
         out[m] = 0;
@@ -288,7 +288,7 @@ static int ui_fetch_remote(char* out, size_t outsz)
     }
     p += 10; /* strlen("userIndex=") */
     size_t i = 0;
-    while (p[i] && p[i] != '&' && i < outsz - 1)
+    while (p[i] && p[i] != '&' && i < outsz - 1U)
     {
         out[i] = p[i];
         i++;
@@ -329,13 +329,13 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
     }
 
     size_t qs_len = strlen(qs);
-    char* search = malloc(qs_len + 2);
+    char* search = malloc(qs_len + 2U);
     if (!search)
     {
         return 0;
     }
     search[0] = '?';
-    (void)memcpy(search + 1, qs, qs_len + 1);
+    (void)memcpy(search + 1U, qs, qs_len + 1U);
     char* s_enc = urlencode(search);
     free(search);
     if (!s_enc)
@@ -343,7 +343,7 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
         return 0;
     }
 
-    size_t body_len = strlen(auth_user()) + strlen(s_enc) + 32;
+    size_t body_len = strlen(auth_user()) + strlen(s_enc) + 32U;
     char* body = malloc(body_len);
     if (!body)
     {
@@ -394,7 +394,7 @@ static int service_avoided(const char* p, size_t len)
      * 排到所有普通项之后（"校园网"为限时套餐，误选会消耗免费时长）。
      * 精确配置命中的运营商不受影响。 */
     static const char* const SERVICE_AVOID[1] = { "校园网" };
-    for (size_t i = 0; i < sizeof SERVICE_AVOID / sizeof *SERVICE_AVOID; i++)
+    for (size_t i = 0; i < sizeof(SERVICE_AVOID)/ sizeof(*SERVICE_AVOID); i++)
     {
         size_t kwl = strlen(SERVICE_AVOID[i]);
         if (len < kwl)
@@ -438,7 +438,7 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
              */
             if (name[0] && strlen(name) == len && strncmp(p, name, len) == 0)
             {
-                size_t c = len < outsz - 1 ? len : outsz - 1;
+                size_t c = (len < outsz - 1U) ? len : outsz - 1U;
                 (void)memcpy(out, p, c);
                 out[c] = 0;
                 return 1;
@@ -456,7 +456,7 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
     size_t pick_len = first_ok ? first_ok_len : first_len;
     if (pick)
     {
-        size_t c = pick_len < outsz - 1 ? pick_len : outsz - 1;
+        size_t c = (pick_len < outsz - 1U) ? pick_len : outsz - 1U;
         (void)memcpy(out, pick, c);
         out[c] = 0;
         return 1;
@@ -629,7 +629,7 @@ static int login_impl(int force, int known_offline)
     {
         qs++;
     }
-    if (qs == NULL || *qs == 0)
+    if (qs == NULL || *qs == '\0')
     {
         LOG_ERROR("queryString为空");
         goto done;
@@ -650,7 +650,7 @@ static int login_impl(int force, int known_offline)
     {
         goto done;
     }
-    body = malloc(strlen(qse2) + 32);
+    body = malloc(strlen(qse2) + 32U);
     if (!body)
     {
         goto done;
@@ -693,7 +693,7 @@ char n_hex[600]= {0};
         goto done;
     }
     LOG_INFO("RSA 公钥: e=%s(hex), n=%zu 字符 = %zu bit",
-             e_hex, strlen(n_hex), strlen(n_hex) * 4);
+             e_hex, strlen(n_hex), strlen(n_hex) * 4U);
     LOG_TRACE("publicKeyModulus = %s", n_hex);
 #endif
 
@@ -741,7 +741,7 @@ char svc_list[1024]= {0};
                     size_t len = e ? (size_t)(e - p) : strlen(p);
                     if (len && service_avoided(p, len) == pass)
                     {
-                        size_t c = len < sizeof cands[0] - 1 ? len : sizeof cands[0] - 1;
+                        size_t c = (len < sizeof(cands[0]) - 1U) ? len : sizeof(cands[0]) - 1U;
                         (void)memcpy(cands[ncand], p, c);
                         cands[ncand][c] = 0;
                         ncand++;
@@ -788,10 +788,10 @@ char svc_list[1024]= {0};
             goto done;
         }
         enc = 1;
-        size_t plain_len = strlen(auth_password()) + 1 + strlen(mac);
+        size_t plain_len = strlen(auth_password()) + 1U + strlen(mac);
         LOG_INFO("密码已加密: %zu 字节明文(pwd>mac) -> %zu 字符密文, %zu 分块 x %d 字节",
                  plain_len, strlen(pwd_sub),
-                 (plain_len + RSA_CHUNK - 1) / RSA_CHUNK, RSA_CHUNK);
+                 (plain_len + (size_t)RSA_CHUNK - 1U) / (size_t)RSA_CHUNK, RSA_CHUNK);
     }
 #else
     snprintf(pwd_sub, sizeof pwd_sub, "%s", PASSWORD);
@@ -802,7 +802,7 @@ char svc_list[1024]= {0};
     int login_ok = 0;
     for (int ci = 0; ci < ncand && !login_ok; ci++)
     {
-        size_t cand_len = strnlen(cands[ci], sizeof service - 1);
+        size_t cand_len = strnlen(cands[ci], sizeof(service) - 1U);
         (void)memcpy(service, cands[ci], cand_len);
         service[cand_len] = 0;
         (void)snprintf(g_last_service, sizeof g_last_service, "%s", service);
@@ -816,7 +816,7 @@ char svc_list[1024]= {0};
             goto done;
         }
         size_t lbsz = strlen(auth_user()) + strlen(pwd_sub) + strlen(svc_enc)
-            + strlen(qs_enc) + 256;
+            + strlen(qs_enc) + 256U;
         lb = malloc(lbsz);
         if (!lb)
         {

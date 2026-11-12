@@ -165,7 +165,7 @@
 #endif
 /* -vvv 时打印响应体的最大字节数，避免刷屏 */
 #ifndef LOG_BODY_MAX
-#define LOG_BODY_MAX           4096
+#define LOG_BODY_MAX           4096U
 #endif
 
 /* ====== 状态文件（相对状态目录，见 state.h） ====== */
