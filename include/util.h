@@ -16,7 +16,7 @@ int extract_field(const char* page, const char* field, char* out, size_t outsz);
 char* fetch_redirect_url(const char* page);
 
 /* 从 queryString 中提取 mac 参数值（取最后一次出现），成功返回 1 */
-int extract_mac(const char* query_string, char* out, size_t outsz);
+int extract_mac(const char* qs, char* out, size_t outsz);
 
 /* 从 queryString（a=1&b=2 形态）里取 name 参数值，取最后一次出现，
  * 兼容 name 位于串首（无前置 &）；成功返回 1 */

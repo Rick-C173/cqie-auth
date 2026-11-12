@@ -151,37 +151,40 @@ static int config_update_key(const char* path, const char* key, const char* val)
     if (in)
     {
         char line[512];
-        while (fgets(line, sizeof line, in))
+    while (fgets(line, sizeof line, in))
+    {
+        const char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (!replaced && strncmp(p, key, strlen(key)) == 0)
         {
-            const char* p = line;
-            while (*p == ' ' || *p == '\t') p++;
-            if (!replaced && strncmp(p, key, strlen(key)) == 0)
+            const char* q = p + strlen(key);
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q == '=' || *q == '\n' || *q == 0)
             {
-                const char* q = p + strlen(key);
-                while (*q == ' ' || *q == '\t') q++;
-                if (*q == '=' || *q == '\n' || *q == 0)
-                {
-                    char add[600];
-                    snprintf(add, sizeof add, "%s=%s\n", key, val);
-                    if (strlen(body) + strlen(add) >= sizeof body) { fclose(in); return 0; }
-                    strcat(body, add);
-                    replaced = 1;
-                    continue;
-                }
+                char add[600];
+                snprintf(add, sizeof add, "%s=%s\n", key, val);
+                size_t bl = strlen(body);
+                if (bl + strlen(add) >= sizeof body) { fclose(in); return 0; }
+                snprintf(body + bl, sizeof body - bl, "%s", add);
+                replaced = 1;
+                continue;
             }
-            if (strlen(body) + strlen(line) >= sizeof body) { fclose(in); return 0; }
-            strcat(body, line);
         }
-        fclose(in);
+        size_t bl = strlen(body);
+        if (bl + strlen(line) >= sizeof body) { fclose(in); return 0; }
+        snprintf(body + bl, sizeof body - bl, "%s", line);
+    }
+    fclose(in);
     }
     if (!replaced)
     {
         size_t n = strlen(body);
         char add[600];
-        if (n && body[n - 1] != '\n') strcat(body, "\n");
+        if (n && body[n - 1] != '\n') snprintf(body + n, sizeof body - n, "\n");
         snprintf(add, sizeof add, "%s=%s\n", key, val);
-        if (strlen(body) + strlen(add) >= sizeof body) return 0;
-        strcat(body, add);
+        n = strlen(body);
+        if (n + strlen(add) >= sizeof body) return 0;
+        snprintf(body + n, sizeof body - n, "%s", add);
     }
     char tmp[640];
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
@@ -438,6 +441,7 @@ eof:
 static const char* opt_val(int argc, char** argv, int* i, const char* name)
 {
     const char* a = argv[*i];
+    if (!a) return NULL; /* 防御：argv 以 NULL 结尾（正常循环 i<argc 不会触达） */
     size_t n = strlen(name);
     if (!strncmp(a, name, n))
     {
@@ -648,7 +652,7 @@ int main(int argc, char** argv)
         {
             const char* env = getenv("CQIE_DEBUG");
             dlevel = DEBUG_DEFAULT;
-            if (env && env[0]) dlevel = atoi(env);
+            if (env && env[0]) dlevel = (int)strtol(env, NULL, 10);
         }
         if (dry_run && dlevel < 1) dlevel = 1; /* dry-run 自动带流程日志 */
         if (dlevel < 0) dlevel = 0;
@@ -885,7 +889,7 @@ int main(int argc, char** argv)
         else if (!strcmp(cmd, "logout")) ret = cmd_logout(arg);
         else if (!strcmp(cmd, "status")) ret = cmd_status();
         else if (!strcmp(cmd, "userindex")) ret = cmd_userindex(arg);
-    else if (!strcmp(cmd, "doctor")) ret = cmd_doctor(cfg_path);
+        else if (!strcmp(cmd, "doctor")) ret = cmd_doctor(cfg_path);
         else
         {
             fprintf(stderr, "未知命令: %s\n\n", cmd);

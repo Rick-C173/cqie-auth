@@ -6,7 +6,7 @@
 //   2) log_status() —— 每次运行一条结果到 syslog（机器看的审计轨迹，
 //                      OpenWrt 上由 logd 收，`logread` 查看）
 //
-#define _POSIX_C_SOURCE 200809L   /* clock_gettime（compat 层的 POSIX 实现也要） */
+#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（clock_gettime，compat 层的 POSIX 实现也要） */
 #include "log.h"
 #include "config.h"
 #include "compat.h"

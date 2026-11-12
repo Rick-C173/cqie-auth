@@ -3,7 +3,7 @@
 //
 // 网络层的双平台差异全部收敛在 http_min.c / auth.c -> compat.h -> 本文件这一条线上。
 //
-#define _POSIX_C_SOURCE 200809L /* fcntl / clock_gettime / nanosleep / localtime_r */
+#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（fcntl / clock_gettime / nanosleep / localtime_r） */
 
 #include "compat.h"
 #include "config.h" /* POSIX 默认配置/状态路径宏 */
@@ -218,14 +218,14 @@ int compat_exe_dir(char* out, size_t n)
 
 int compat_default_config(char* out, size_t n)
 {
-    (void)out; (void)n;
-    return 0; /* POSIX：返回空，调用方回退编译期宏/环境变量链 */
+    if (n) out[0] = 0; /* 返回 0 = 空，调用方回退编译期宏/环境变量链 */
+    return 0;
 }
 
 int compat_default_state(char* out, size_t n)
 {
-    (void)out; (void)n;
-    return 0; /* POSIX：返回空，state_init 内部走 环境变量→宏 链 */
+    if (n) out[0] = 0; /* 返回 0 = 空，state_init 内部走 环境变量→宏 链 */
+    return 0;
 }
 
 #endif

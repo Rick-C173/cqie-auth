@@ -18,7 +18,7 @@
 // 纯加头字段，不增加任何耗时；Accept-Encoding 刻意不发（会引来 gzip，解不动）。
 //
 // 跨平台：socket/非阻塞/poll/错误码差异全部走 include/compat.h（Winsock2 或 POSIX）。
-#define _POSIX_C_SOURCE 200809L   /* getaddrinfo / poll / strncasecmp */
+#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（getaddrinfo / poll / strncasecmp） */
 
 #include "http.h"
 #include "config.h"
@@ -108,7 +108,7 @@ static int parse_url(const char* url, url_t* u)
     u->port = 80;
     if (colon)
     {
-        int pv = atoi(colon + 1);
+        int pv = (int)strtol(colon + 1, NULL, 10);
         if (pv > 0 && pv < 65536) u->port = pv;
     }
 
@@ -471,7 +471,7 @@ static int hdr_get(const char* hdr, const char* name, char* out, size_t outsz)
 static int parse_status(const char* hdr)
 {
     const char* sp = strchr(hdr, ' ');
-    return sp ? atoi(sp + 1) : -1;
+    return sp ? (int)strtol(sp + 1, NULL, 10) : -1;
 }
 
 /*

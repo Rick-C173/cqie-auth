@@ -3,6 +3,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.9.3] - 2026-11-12
+
+### Fixed
+- **清零 clang-tidy 警告**（CLion 同源引擎，LLVM 24.0.0git + 项目 .clang-tidy）：
+  - `config_update_key` 的 4 处 `strcat` 与 `fetch_services` 的 `strcpy` 改为
+    `snprintf` 定界追加 / `memcpy`（原逻辑已有长度检查，换安全 API 消除
+    `clang-analyzer-security.insecureAPI` ERROR）
+  - 4 处 `atoi` 改 `strtol`（`cert-err34-c`：CQIE_DEBUG 解析、URL/HTTP
+    状态行端口解析）
+  - `opt_val` 增加空指针防御（`clang-analyzer-core.NonNullParamChecker`）
+  - `cmd_doctor` 分发处 if/else 缩进对齐（`readability-misleading-indentation`）
+  - `compat_default_config/state` POSIX 分支改为显式写空串（消除
+    `readability-non-const-parameter`；语义不变，Windows 分支不动）
+  - `extract_mac` 声明/定义参数名统一为 `qs`
+  - 5 处 `#define _POSIX_C_SOURCE` 加 `NOLINT(bugprone-reserved-identifier)`——
+    POSIX 标准要求的特性测试宏，检查项在此为误报
+
 ## [1.9.2] - 2026-11-12
 
 ### Changed

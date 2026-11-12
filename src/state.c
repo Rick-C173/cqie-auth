@@ -4,7 +4,7 @@
 // 为什么不再把状态丢在当前目录：cron/路由器上 CWD 可能是 /（只读），
 // 而且 userIndex 相当于会话令牌，不该留在随手可读的地方。
 //
-#define _POSIX_C_SOURCE 200809L   /* mkdir / rename / chmod */
+#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（mkdir / rename / chmod） */
 #include "state.h"
 #include "config.h"
 #include "compat.h" /* Windows 下经此拿到 windows.h（MoveFileExA） */

@@ -4,7 +4,7 @@
 // 登录对应原 main.sh，注销对应原 cqie-exit.sh，reauth 为新增的"先注销再认证"。
 // 约定：结果（userIndex / 注销响应 / 已在线）走 stdout，诊断信息走 stderr（见 log.h）。
 //
-#define _POSIX_C_SOURCE 200809L /* getaddrinfo / inet_ntop（-std=c99 下需显式开启） */
+#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（getaddrinfo / inet_ntop，-std=c99 下需显式开启） */
 #include "auth.h"
 #include "config.h"
 #include "bn.h"
@@ -146,7 +146,7 @@ static int portal_host_port(char* host, size_t hsz, int* port)
     host[i] = 0;
     if (!host[0]) return 0;
     *port = 80;
-    if (*p == ':') *port = atoi(p + 1);
+    if (*p == ':') *port = (int)strtol(p + 1, NULL, 10);
     return 1;
 }
 
@@ -266,10 +266,11 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
         >= (int)sizeof url)
         return 0;
 
-    char* search = malloc(strlen(qs) + 2);
+    size_t qs_len = strlen(qs);
+    char* search = malloc(qs_len + 2);
     if (!search) return 0;
     search[0] = '?';
-    strcpy(search + 1, qs);
+    memcpy(search + 1, qs, qs_len + 1);
     char* s_enc = urlencode(search);
     free(search);
     if (!s_enc) return 0;
