@@ -146,7 +146,8 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
 {
     int hi = -1;
     size_t n = 0;
-    for (const char* p = s; *p; p++)
+    int stop = 0;
+    for (const char* p = s; *p && !stop; p++)
     {
         unsigned char c = (unsigned char)*p;
         if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
@@ -168,7 +169,8 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
         }
         else
         {
-            break; /* 其它字符终止 */
+            stop = 1; /* 其它字符终止 */
+            continue;
         }
         if (hi < 0)
         {
@@ -178,10 +180,14 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
         {
             if (n + 1 >= outsz)
             {
-                break;
+                stop = 1; /* 输出缓冲区满 */
             }
-            out[n++] = (char)((hi << 4) | v);
-            hi = -1;
+            else
+            {
+                out[n] = (char)((hi << 4) | v);
+                n++;
+                hi = -1;
+            }
         }
     }
     if (n < outsz)

@@ -1092,13 +1092,10 @@ static sock_t connect_start(const char* host, int port)
             fd = SOCK_INVALID;
             continue;
         }
-        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0 ||
+            sock_errno == SOCK_ERR_INPROGRESS)
         {
-            break; /* 本机地址立即连上 */
-        }
-        if (sock_errno == SOCK_ERR_INPROGRESS)
-        {
-            break; /* 正在连，交给 poll */
+            break; /* 本机地址立即连上，或正在连（交给 poll） */
         }
         (void)sock_close(fd);
         fd = SOCK_INVALID;
@@ -1280,12 +1277,8 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
     while (pending && !(hit && extra_done))
     {
         long left = remain_ms(deadline);
-        if (left <= 0)
-        {
-            break;
-        }
-
-        if (hit && !extra_done)
+        int stop = (left <= 0);
+        if (!stop && hit && !extra_done)
         {
             /* 204 已命中：放弃其余 204 连接，poll 列表只剩附加探测 */
             for (size_t i = 0; i < n; i++)
@@ -1301,20 +1294,24 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
 
         struct pollfd pfds[PROBE_MAX + 1];
         size_t idx[PROBE_MAX + 1];
-    size_t m = 0;
-        for (size_t i = 0; i < n; i++)
+        size_t m = 0;
+        if (!stop)
         {
-            probe_t* p = &g_probes[i];
-            if (p->fd == SOCK_INVALID || p->phase == 3)
+            for (size_t i = 0; i < n; i++)
             {
-                continue;
+                probe_t* p = &g_probes[i];
+                if (p->fd == SOCK_INVALID || p->phase == 3)
+                {
+                    continue;
+                }
+                pfds[m].fd = (int)p->fd;
+                pfds[m].events = p->phase == 2 ? POLLIN : POLLOUT;
+                pfds[m].revents = 0;
+                idx[m] = i;
+                m++;
             }
-            pfds[m].fd = (int)p->fd;
-            pfds[m].events = p->phase == 2 ? POLLIN : POLLOUT;
-            pfds[m].revents = 0;
-            idx[m++] = i;
         }
-        if (extra_fd != SOCK_INVALID)
+        if (!stop && extra_fd != SOCK_INVALID)
         {
             pfds[m].fd = (int)extra_fd;
             pfds[m].events = POLLOUT;
@@ -1322,45 +1319,56 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
             idx[m] = EXTRA_IDX_VAL;
             m++;
         }
-        if (!m)
+        if (!stop && !m)
+        {
+            stop = 1; /* 没有可等待的连接 */
+        }
+
+        int r = 0;
+        if (!stop)
+        {
+            r = poll(pfds, (nfds_t)m, (int)left);
+            if (r <= 0)
+            {
+                stop = 1; /* 超时（全部还没连上/没响应） */
+            }
+        }
+
+        if (!stop)
+        {
+            for (size_t k = 0; k < m; k++)
+            {
+                if (!pfds[k].revents)
+                {
+                    continue;
+                }
+                if (idx[k] == EXTRA_IDX_VAL)
+                {
+                    /* portal 可达性：POLLOUT/POLLERR 后以 SO_ERROR 定论 */
+                    extra_ok = (sock_take_error(extra_fd) == 0);
+                    (void)sock_close(extra_fd);
+                    extra_fd = SOCK_INVALID;
+                    extra_done = 1;
+                    pending--;
+                    continue;
+                }
+                probe_t* p = &g_probes[idx[k]];
+                probe_step(p, &hit);
+                if (p->phase == 3 && p->fd != SOCK_INVALID)
+                {
+                    (void)sock_close(p->fd);
+                    p->fd = SOCK_INVALID;
+                    pending--;
+                }
+                if (hit)
+                {
+                    break; /* 本轮事件处理完毕即退出 poll 等待 */
+                }
+            }
+        }
+        if (stop)
         {
             break;
-        }
-
-        int r = poll(pfds, (nfds_t)m, (int)left);
-        if (r <= 0)
-        {
-            break; /* 超时（全部还没连上/没响应） */
-        }
-
-        for (size_t k = 0; k < m; k++)
-        {
-            if (!pfds[k].revents)
-            {
-                continue;
-            }
-            if (idx[k] == EXTRA_IDX_VAL)
-            {
-                /* portal 可达性：POLLOUT/POLLERR 后以 SO_ERROR 定论 */
-                extra_ok = (sock_take_error(extra_fd) == 0);
-                (void)sock_close(extra_fd);
-                extra_fd = SOCK_INVALID;
-                extra_done = 1;
-                pending--;
-                continue;
-            }
-            probe_t* p = &g_probes[idx[k]];
-            probe_step(p, &hit);
-            if (p->phase == 3 && p->fd != SOCK_INVALID)
-            {
-                (void)sock_close(p->fd);
-                p->fd = SOCK_INVALID;
-                pending--;
-            }
-            if (hit)
-            {
-                break;
-            }
         }
     }
 

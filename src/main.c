@@ -378,7 +378,8 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
         }
     }
 
-    for (;;)
+    int got_pass = 0;
+    while (!got_pass)
     {
         (void)printf("密码 (不回显): ");
         (void)fflush(stdout);
@@ -386,11 +387,11 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
         {
             goto eof;
         }
-        if (w->pass[0])
+        got_pass = (w->pass[0] != 0);
+        if (!got_pass)
         {
-            break;
+            (void)printf("密码不能为空。\n");
         }
-        (void)printf("密码不能为空。\n");
     }
 
     (void)printf("探测地址 (回车=%s)：用于触发校园网认证页\n", def_probe);
@@ -475,7 +476,8 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
                 (void)printf("      %d. %s\n", i + 1, items[i]);
             }
         }
-        for (;;)
+        int done = 0;
+        while (!done)
         {
             if (nitems)
             {
@@ -495,23 +497,30 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
             }
             if (!tmp[0])
             {
-                break; /* 留空：登录时逐项尝试 */
+                done = 1; /* 留空：登录时逐项尝试 */
             }
-            char* endp = NULL;
-            long nsel = strtol(tmp, &endp, 10);
-            if (nitems && endp && *endp == 0 && nsel >= 1 && nsel <= nitems)
+            else
             {
-                (void)snprintf(w->svc, sizeof w->svc, "%s", items[nsel - 1]);
-                break;
+                char* endp = NULL;
+                errno = 0;
+                long nsel = strtol(tmp, &endp, 10);
+                if (nitems && endp && *endp == 0 && errno == 0 &&
+                    nsel >= 1 && nsel <= nitems)
+                {
+                    (void)snprintf(w->svc, sizeof w->svc, "%s", items[nsel - 1]);
+                    done = 1;
+                }
+                else if (nitems && endp && *endp == 0)
+                {
+                    (void)printf("序号超出范围（1-%d），请重新选择。\n", nitems);
+                }
+                else
+                {
+                    /* 非数字：按手输名称处理（兼容列表外的自定义值/离线场景） */
+                    (void)snprintf(w->svc, sizeof w->svc, "%s", tmp);
+                    done = 1;
+                }
             }
-            if (nitems && endp && *endp == 0)
-            {
-                (void)printf("序号超出范围（1-%d），请重新选择。\n", nitems);
-                continue;
-            }
-            /* 非数字：按手输名称处理（兼容列表外的自定义值/离线场景） */
-            (void)snprintf(w->svc, sizeof w->svc, "%s", tmp);
-            break;
         }
     }
     return 1;
@@ -1150,6 +1159,7 @@ int main(int argc, char** argv)
 
         auth_session_unlock(); /* 持锁完成写回/写盘后释放，消除写回并发窗口 */
 
+        int exit_loop = 0;
         if (pending_write)
         {
             if (ret == 0)
@@ -1164,22 +1174,34 @@ int main(int argc, char** argv)
                     (void)printf("配置已保存: %s\n", W.path);
                 }
                 pending_write = 0;
-                break;
+                exit_loop = 1;
             }
-            /* 验证失败：凭据未写盘，询问重试（回向导，旧值预填） */
-            (void)printf("凭据未保存（验证失败）。重新输入? (y/N): ");
-            (void)fflush(stdout);
-            char ans[16]= {0};
-            int rl = read_line(ans, sizeof ans, 0);
-            if (!rl || (ans[0] != 'y' && ans[0] != 'Y'))
+            else
             {
-                (void)fprintf(stderr, "未写入任何配置。\n");
-                break;
+                /* 验证失败：凭据未写盘，询问重试（回向导，旧值预填） */
+                (void)printf("凭据未保存（验证失败）。重新输入? (y/N): ");
+                (void)fflush(stdout);
+                char ans[16]= {0};
+                int rl = read_line(ans, sizeof ans, 0);
+                if (!rl || (ans[0] != 'y' && ans[0] != 'Y'))
+                {
+                    (void)fprintf(stderr, "未写入任何配置。\n");
+                    exit_loop = 1;
+                }
+                else
+                {
+                    need_wizard = 1; /* 回向导重输，旧值已预填 */
+                }
             }
-            need_wizard = 1;
-            continue;
         }
-        break;
+        else
+        {
+            exit_loop = 1;
+        }
+        if (exit_loop)
+        {
+            break;
+        }
     }
 
     log_close();
