@@ -34,7 +34,7 @@ static int mkdir_p(const char* path)
         tmp[si] = 0;
         /* Windows 盘根（"C:"）不是可创建目录：_mkdir 报错属正常，stat 也
          * 未必成功（CRT 把 "C:" 当作该盘当前目录），直接放行 */
-        int drive_root = tmp[0] && tmp[1] == ':' && tmp[2] == 0;
+        int drive_root = (tmp[0] && tmp[1] == ':' && tmp[2] == 0) ? 1 : 0;
         if (!drive_root && compat_mkdir(tmp) != 0)
         {
             struct stat st;

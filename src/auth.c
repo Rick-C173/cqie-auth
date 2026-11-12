@@ -30,7 +30,9 @@ void auth_set_dry_run(int on) { g_dry_run = on; }
 void auth_set_plain(int on) { g_plain = on; }
 
 /* ---- 运行期凭据（配置文件读取后注入；宏为编译期兜底，发布版默认空）---- */
-static char g_user[128]= {0}, g_pass[256] = "", g_service[128] = "";
+static char g_user[128]= {0};
+static char g_pass[256]= {0};
+static char g_service[128]= {0};
 static char g_last_service[256]= {0}; /* login 实际使用的运营商（探测命中或沿用配置） */
 static char g_probe[512]= {0};        /* 运行期探测地址（向导/配置文件 probe= 注入） */
 
@@ -225,7 +227,9 @@ static void log_form(int level, const char* tag, const char* body)
             p = end;
             continue;
         }
-        out[o++] = *p++;
+        out[o] = *p;
+        o++;
+        p++;
     }
     out[o] = 0;
     log_emit(level, "%s %s", tag, out);
@@ -384,15 +388,12 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
 }
 
 /* 在 "a@b@c" 运营商列表里精确匹配 name，命中则拷贝到 out */
-/*
- * 自动回退的规避词表：命中这些关键词的运营商在自动回退/逐项尝试时
- * 排到所有普通项之后（"校园网"为限时套餐，误选会消耗免费时长）。
- * 精确配置命中的运营商不受影响。
- */
-static const char* const SERVICE_AVOID[1] = { "校园网" };
-
 static int service_avoided(const char* p, size_t len)
 {
+    /* 自动回退的规避词表：命中这些关键词的运营商在自动回退/逐项尝试时
+     * 排到所有普通项之后（"校园网"为限时套餐，误选会消耗免费时长）。
+     * 精确配置命中的运营商不受影响。 */
+    static const char* const SERVICE_AVOID[1] = { "校园网" };
     for (size_t i = 0; i < sizeof SERVICE_AVOID / sizeof *SERVICE_AVOID; i++)
     {
         size_t kwl = strlen(SERVICE_AVOID[i]);
@@ -679,7 +680,8 @@ static int login_impl(int force, int known_offline)
     }
     log_response("pageInfo", &info);
 
-    char e_hex[256]= {0}, n_hex[600] = "";
+    char e_hex[256]= {0};
+char n_hex[600]= {0};
     (void)extract_field(info.data, "publicKeyExponent", e_hex, sizeof e_hex);
     (void)extract_field(info.data, "publicKeyModulus", n_hex, sizeof n_hex);
 #if USE_ENCRYPT
@@ -699,7 +701,8 @@ static int login_impl(int force, int known_offline)
      * - 配置非空：单一候选（列表精确命中，或回退规避词表后的第一普通项）
      * - 配置为空：整个列表逐个尝试，规避词表项（校园网/免费等限时套餐）排最后；
      *   认证成功后把命中的运营商写回配置文件，下次直接精确命中 */
-    char service[256]= {0}, svc_list[1024] = "";
+    char service[256]= {0};
+char svc_list[1024]= {0};
     char cands[16][256];
     int ncand = 0;
     if (fetch_services(qs, referer, svc_list, sizeof svc_list))
@@ -799,9 +802,9 @@ static int login_impl(int force, int known_offline)
     int login_ok = 0;
     for (int ci = 0; ci < ncand && !login_ok; ci++)
     {
-        size_t cl = strnlen(cands[ci], sizeof service - 1);
-        (void)memcpy(service, cands[ci], cl);
-        service[cl] = 0;
+        size_t cand_len = strnlen(cands[ci], sizeof service - 1);
+        (void)memcpy(service, cands[ci], cand_len);
+        service[cand_len] = 0;
         (void)snprintf(g_last_service, sizeof g_last_service, "%s", service);
         free(svc_enc);
         free(lb);
@@ -1128,7 +1131,8 @@ int cmd_doctor(const char* cfg_path)
     /* [2/4] 探测地址：可达性 + 劫持跳转验证。
      * 注意：已认证状态下网关不劫持，无跳转响应属正常现象，不计入 problems。 */
     (void)printf("[2/4] 探测地址 %s\n", probe_url());
-    char dportal[256]= {0}, dlist[1024] = "";
+    char dportal[256]= {0};
+char dlist[1024]= {0};
     int discovered = auth_discover_portal(dportal, sizeof dportal, dlist, sizeof dlist);
     if (discovered)
     {

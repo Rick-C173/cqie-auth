@@ -7,9 +7,6 @@
 
 #include "compat.h"
 
-static int compat_exe_dir(char* out, size_t n); /* 8.7: 仅本模块使用 */
-
-static int compat_exe_dir(char* out, size_t n); /* 8.7: 仅本模块使用 */
 #include "config.h" /* POSIX 默认配置/状态路径宏 */
 
 #ifdef _WIN32
@@ -74,6 +71,29 @@ void compat_console_utf8(void)
      * 切到 65001(CP_UTF8) 后 conhost 按 UTF-8 渲染，PowerShell/cmd 直显中文。 */
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+}
+
+static int compat_exe_dir(char* out, size_t n)
+{
+    wchar_t wpath[600];
+    DWORD len = GetModuleFileNameW(NULL, wpath, (DWORD)(sizeof wpath / sizeof *wpath));
+    if (len == 0 || len >= sizeof wpath / sizeof *wpath)
+    {
+        return 0;
+    }
+    /* 程序内字符串统一 UTF-8；W 版 API + 显式转换保证中文/空格路径安全 */
+    int need = WideCharToMultiByte(CP_UTF8, 0, wpath, -1, out, (int)n, NULL, NULL);
+    if (need <= 0 || (size_t)need > n)
+    {
+        return 0;
+    }
+    char* slash = strrchr(out, '\\');
+    if (!slash)
+    {
+        return 0;
+    }
+    *slash = 0;
+    return out[0] ? 1 : 0;
 }
 
 
@@ -247,23 +267,6 @@ void compat_msleep(int ms)
 int compat_mkdir(const char* path) { return mkdir(path, S_IRWXU); }
 
 void compat_console_utf8(void) { /* POSIX 终端本就是 UTF-8，无需处理 */ }
-
-static int compat_exe_dir(char* out, size_t n)
-{
-    ssize_t len = readlink("/proc/self/exe", out, n - 1);
-    if (len <= 0)
-    {
-        return 0;
-    }
-    out[len] = 0;
-    char* slash = strrchr(out, '/');
-    if (!slash)
-    {
-        return 0;
-    }
-    *slash = 0;
-    return out[0] ? 1 : 0;
-}
 
 int compat_default_config(char* out, size_t n)
 {

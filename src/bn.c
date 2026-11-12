@@ -97,7 +97,7 @@ void bn_mod(const bn* n, const uint32_t* x, int xn, bn* r)
                 r->d[k] = (r->d[k] << 1) | carry;
                 carry = nc;
             }
-            r->d[0] |= (x[i] >> b) & 1;
+            r->d[0] |= (x[i] >> b) & 1U;
             /* carry=1 表示 r 已溢出 BN_LIMBS*32 位（模数接近本类型上限时会遇到），
              * 此时 r >= n 必然成立；减一次即可，因为 r < 2n */
             if (carry || bn_cmp(r, n) >= 0)
@@ -147,7 +147,7 @@ void bn_modexp(bn* r, const bn* m, const bn* e, const bn* n)
         {
             bn_mul(prod, r, r);
             bn_mod(n, prod, 2 * BN_LIMBS, r); /* r = r^2 */
-            if ((e->d[i] >> b) & 1)
+            if ((e->d[i] >> b) & 1U)
             {
                 bn_mul(prod, r, &base);
                 bn_mod(n, prod, 2 * BN_LIMBS, r);

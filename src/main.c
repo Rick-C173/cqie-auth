@@ -240,7 +240,7 @@ static int read_line(char* buf, size_t sz, int echo_off)
     {
         compat_echo(0);
     }
-    ok = fgets(buf, (int)sz, stdin) != NULL;
+    ok = (fgets(buf, (int)sz, stdin) != NULL) ? 1 : 0;
     if (ok)
     {
         size_t n = strlen(buf);
@@ -387,7 +387,7 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
         {
             goto eof;
         }
-        got_pass = (w->pass[0] != 0);
+        got_pass = (w->pass[0] != 0) ? 1 : 0;
         if (!got_pass)
         {
             (void)printf("密码不能为空。\n");
@@ -836,10 +836,10 @@ int main(int argc, char** argv)
             if (env && env[0])
             {
                 errno = 0;
-                long dl = strtol(env, NULL, 10);
+                long dbg_val = strtol(env, NULL, 10);
                 if (errno == 0)
                 {
-                    dlevel = (int)dl;
+                    dlevel = (int)dbg_val;
                 }
             }
         }
@@ -954,7 +954,7 @@ int main(int argc, char** argv)
     char cfg_pass[256]= {0};
     {
         char cfg_svc[128]= {0};
-        int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
+        int explicit_cfg = (cfg_opt != NULL) ? 1 : 0; /* 只有 --config 缺文件才报错；env 静默 */
         /* --setup / reset 时允许文件不存在——前者就是要创建它，后者幂等删除 */
         if (load_config_file(cfg_path, cfg_user, sizeof cfg_user,
                              cfg_pass, sizeof cfg_pass, cfg_svc, sizeof cfg_svc,
@@ -1028,7 +1028,7 @@ int main(int argc, char** argv)
     int need_wizard = (setup ||
                        (cmd && (auth_user()[0] == 0 || auth_password()[0] == 0) &&
                         compat_stdin_is_tty() &&
-                        (!strcmp(cmd, "login") || !strcmp(cmd, "reauth"))));
+                        (!strcmp(cmd, "login") || !strcmp(cmd, "reauth")))) ? 1 : 0;
     struct WizardOut W;
     (void)memset(&W, 0, sizeof W);
     (void)snprintf(W.path, sizeof W.path, "%s", cfg_path);

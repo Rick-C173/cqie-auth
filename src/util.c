@@ -157,15 +157,15 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
         int v;
         if (c >= '0' && c <= '9')
         {
-            v = c - '0';
+            v = (int)c - '0';
         }
         else if (c >= 'a' && c <= 'f')
         {
-            v = c - 'a' + 10;
+            v = (int)c - 'a' + 10;
         }
         else if (c >= 'A' && c <= 'F')
         {
-            v = c - 'A' + 10;
+            v = (int)c - 'A' + 10;
         }
         else
         {

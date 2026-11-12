@@ -59,9 +59,9 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
         for (int i = 0; i < cnt; i++)
         {
             /* 大端：be[0] 为最高字节 */
-            int bi = cnt - 1 - i;
-            m.d[bi / 4] |= (uint32_t)(unsigned char)
-            be[i] << ((bi % 4) * 8);
+            uint32_t bi = (uint32_t)(cnt - 1 - i);
+            m.d[bi / 4U] |= (uint32_t)(unsigned char)
+            be[i] << ((bi % 4U) * 8U);
         }
 
         bn r;

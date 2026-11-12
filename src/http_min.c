@@ -697,15 +697,15 @@ static int dechunk(const char* in, size_t inlen, http_buf* out)
             int v;
             if (c >= '0' && c <= '9')
             {
-                v = c - '0';
+                v = (int)c - '0';
             }
             else if (c >= 'a' && c <= 'f')
             {
-                v = c - 'a' + 10;
+                v = (int)c - 'a' + 10;
             }
             else if (c >= 'A' && c <= 'F')
             {
-                v = c - 'A' + 10;
+                v = (int)c - 'A' + 10;
             }
             else
             {
@@ -1051,8 +1051,6 @@ typedef struct
     size_t buflen;
 } probe_t;
 
-static probe_t g_probes[PROBE_MAX];   /* 文件域：非重入；CLI 单线程，够用 */
-
 /* 发起非阻塞 connect（不等待结果），DNS 失败返回 SOCK_INVALID */
 static sock_t connect_start(const char* host, int port)
 {
@@ -1193,6 +1191,8 @@ static void probe_step(probe_t* p, int* hit)
 
 int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
 {
+    /* 并行探测状态（8.9: 仅本函数使用）；文件域改块域静态，非重入语义不变 */
+    static probe_t g_probes[PROBE_MAX];
     static int sigpipe_done;
     if (!sigpipe_done)
     {
@@ -1277,7 +1277,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
     while (pending && !(hit && extra_done))
     {
         long left = remain_ms(deadline);
-        int stop = (left <= 0);
+        int stop = (left <= 0) ? 1 : 0;
         if (!stop && hit && !extra_done)
         {
             /* 204 已命中：放弃其余 204 连接，poll 列表只剩附加探测 */
@@ -1345,7 +1345,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
                 if (idx[k] == EXTRA_IDX_VAL)
                 {
                     /* portal 可达性：POLLOUT/POLLERR 后以 SO_ERROR 定论 */
-                    extra_ok = (sock_take_error(extra_fd) == 0);
+                    extra_ok = (sock_take_error(extra_fd) == 0) ? 1 : 0;
                     (void)sock_close(extra_fd);
                     extra_fd = SOCK_INVALID;
                     extra_done = 1;
