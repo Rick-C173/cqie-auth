@@ -27,15 +27,24 @@ void auth_set_dry_run(int on) { g_dry_run = on; }
 void auth_set_plain(int on) { g_plain = on; }
 
 /* ---- 运行期凭据（配置文件读取后注入；宏为编译期兜底，发布版默认空）---- */
-static char g_user[128] = "", g_pass[256] = "", g_service[128] = "";
-static char g_last_service[256] = ""; /* login 实际使用的运营商（探测命中或沿用配置） */
-static char g_probe[512] = "";        /* 运行期探测地址（向导/配置文件 probe= 注入） */
+static char g_user[128]= {0}, g_pass[256] = "", g_service[128] = "";
+static char g_last_service[256]= {0}; /* login 实际使用的运营商（探测命中或沿用配置） */
+static char g_probe[512]= {0};        /* 运行期探测地址（向导/配置文件 probe= 注入） */
 
 void auth_set_credentials(const char* user, const char* pass, const char* service)
 {
-    if (user && user[0]) snprintf(g_user, sizeof g_user, "%s", user);
-    if (pass && pass[0]) snprintf(g_pass, sizeof g_pass, "%s", pass);
-    if (service && service[0]) snprintf(g_service, sizeof g_service, "%s", service);
+    if (user && user[0])
+    {
+        (void)snprintf(g_user, sizeof g_user, "%s", user);
+    }
+    if (pass && pass[0])
+    {
+        (void)snprintf(g_pass, sizeof g_pass, "%s", pass);
+    }
+    if (service && service[0])
+    {
+        (void)snprintf(g_service, sizeof g_service, "%s", service);
+    }
 }
 
 /* 运行期值优先；未设置时回落编译期默认（-D 注入的口子） */
@@ -46,7 +55,7 @@ const char* auth_last_service(void) { return g_last_service; }
 
 void auth_set_probe(const char* url)
 {
-    snprintf(g_probe, sizeof g_probe, "%s", url ? url : "");
+    (void)snprintf(g_probe, sizeof g_probe, "%s", url ? url : "");
 }
 
 /* 生效的探测地址：运行期 probe= > 编译期 PROBE_URL */
@@ -75,15 +84,20 @@ int auth_discover_portal(char* portal_out, size_t psz, char* list_out, size_t ls
         const char* cut = strstr(redir, "/index.jsp");
         size_t len = cut ? (size_t)(cut - redir) : strlen(redir);
         size_t c = len < psz - 1 ? len : psz - 1;
-        memcpy(portal_out, redir, c);
+        (void)memcpy(portal_out, redir, c);
         portal_out[c] = 0;
         auth_set_portal(portal_out); /* 发现即生效 */
-        char qs[2048] = "";
+        char qs[2048]= {0};
         char* q = strchr(redir, '?');
-        if (q && q[1]) snprintf(qs, sizeof qs, "%s", q + 1);
+        if (q && q[1])
+        {
+            (void)snprintf(qs, sizeof qs, "%s", q + 1);
+        }
         list_out[0] = 0;
         if (qs[0])
-            fetch_services(qs, portal_out, list_out, lsz);
+        {
+            (void)fetch_services(qs, portal_out, list_out, lsz);
+        }
         ok = 1;
     }
     free(redir);
@@ -110,11 +124,13 @@ int auth_fetch_service_list(char* list_out, size_t lsz)
         char* q = strchr(redir, '?');
         if (q && q[1])
         {
-            char qs[2048] = "";
-            snprintf(qs, sizeof qs, "%s", q + 1);
+            char qs[2048]= {0};
+            (void)snprintf(qs, sizeof qs, "%s", q + 1);
             list_out[0] = 0;
             if (fetch_services(qs, portal(), list_out, lsz) && list_out[0])
+            {
                 ok = 1;
+            }
         }
     }
     free(redir);
@@ -139,14 +155,26 @@ static int portal_endpoint(char* buf, size_t n, const char* method)
 static int portal_host_port(char* host, size_t hsz, int* port)
 {
     const char* p = strstr(portal(), "http://");
-    if (!p) return 0;
+    if (!p)
+    {
+        return 0;
+    }
     p += 7;
     size_t i = 0;
-    while (*p && *p != '/' && *p != ':' && i + 1 < hsz) host[i++] = *p++;
+    while (*p && *p != '/' && *p != ':' && i + 1 < hsz)
+    {
+        host[i++] = *p++;
+    }
     host[i] = 0;
-    if (!host[0]) return 0;
+    if (!host[0])
+    {
+        return 0;
+    }
     *port = 80;
-    if (*p == ':') *port = (int)strtol(p + 1, NULL, 10);
+    if (*p == ':')
+    {
+        *port = (int)strtol(p + 1, NULL, 10);
+    }
     return 1;
 }
 
@@ -154,7 +182,10 @@ static int portal_reachable(void)
 {
     char host[128];
     int port;
-    if (!portal_host_port(host, sizeof host, &port)) return 0;
+    if (!portal_host_port(host, sizeof host, &port))
+    {
+        return 0;
+    }
     return http_host_reachable(host, port, HTTP_CONNECT_TIMEOUT_S * 1000L);
 }
 
@@ -162,7 +193,10 @@ static int portal_reachable(void)
 static void log_form(int level, const char* tag, const char* body)
 {
     /* 级别不够时直接退出：否则每次 login 都白做一趟 3KB 的逐字符拷贝 + strncmp 扫描 */
-    if (!log_enabled(level)) return;
+    if (!log_enabled(level))
+    {
+        return;
+    }
     char out[3072];
     size_t o = 0;
     const char* p = body;
@@ -174,7 +208,10 @@ static void log_form(int level, const char* tag, const char* body)
             size_t len = end ? (size_t)(end - p) - 9 : strlen(p) - 9;
             o += (size_t)snprintf(out + o, sizeof out - o,
                                   "password=<%u 字符,已打码>", (unsigned)len);
-            if (!end) break;
+            if (!end)
+            {
+                break;
+            }
             p = end;
             continue;
         }
@@ -195,8 +232,11 @@ static void ui_decode(const char* raw, char* out, size_t outsz)
     if (!n)
     { /* 解不出内容：原样输出（放不下则截断，仅用于显示） */
         size_t m = strlen(raw);
-        if (m >= outsz) m = outsz - 1;
-        memcpy(out, raw, m);
+        if (m >= outsz)
+        {
+            m = outsz - 1;
+        }
+        (void)memcpy(out, raw, m);
         out[m] = 0;
     }
 }
@@ -213,18 +253,25 @@ static void ui_decode(const char* raw, char* out, size_t outsz)
 static int ui_fetch_remote(char* out, size_t outsz)
 {
     char url[512];
-    if (snprintf(url, sizeof url, "%s/redirectortosuccess.jsp", portal())
-        >= (int)sizeof url)
+    if (snprintf(url, sizeof url, "%s/redirectortosuccess.jsp", portal()) >= (int)sizeof url)
+    {
         return 0;
+    }
 
-    char loc[1024] = "";
+    char loc[1024]= {0};
     long code = http_req_location(url, loc, sizeof loc);
     LOG_DEBUG("redirectortosuccess.jsp -> HTTP %ld, Location=%s",
               code, loc[0] ? loc : "(无)");
-    if (code < 300 || code >= 400 || !loc[0]) return 0;
+    if (code < 300 || code >= 400 || !loc[0])
+    {
+        return 0;
+    }
 
     const char* p = strstr(loc, "userIndex=");
-    if (!p) return 0;
+    if (!p)
+    {
+        return 0;
+    }
     p += 10; /* strlen("userIndex=") */
     size_t i = 0;
     while (p[i] && p[i] != '&' && i < outsz - 1)
@@ -262,27 +309,34 @@ static void log_response(const char* tag, const http_buf* b)
 static int fetch_services(const char* qs, const char* referer, char* out, size_t outsz)
 {
     char url[512];
-    if (snprintf(url, sizeof url, "%s/userV2.do?method=getServices", portal())
-        >= (int)sizeof url)
+    if (snprintf(url, sizeof url, "%s/userV2.do?method=getServices", portal()) >= (int)sizeof url)
+    {
         return 0;
+    }
 
     size_t qs_len = strlen(qs);
     char* search = malloc(qs_len + 2);
-    if (!search) return 0;
+    if (!search)
+    {
+        return 0;
+    }
     search[0] = '?';
-    memcpy(search + 1, qs, qs_len + 1);
+    (void)memcpy(search + 1, qs, qs_len + 1);
     char* s_enc = urlencode(search);
     free(search);
-    if (!s_enc) return 0;
+    if (!s_enc)
+    {
+        return 0;
+    }
 
-    size_t bl = strlen(auth_user()) + strlen(s_enc) + 32;
-    char* body = malloc(bl);
+    size_t body_len = strlen(auth_user()) + strlen(s_enc) + 32;
+    char* body = malloc(body_len);
     if (!body)
     {
         free(s_enc);
         return 0;
     }
-    snprintf(body, bl, "username=%s&search=%s", auth_user(), s_enc);
+    (void)snprintf(body, body_len, "username=%s&search=%s", auth_user(), s_enc);
     free(s_enc);
     log_form(LOG_LEVEL_DEBUG, "getServices 表单:", body);
 
@@ -294,14 +348,19 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
     if (code >= 0 && resp.data && resp.data[0])
     {
         const char* s = resp.data;
-        while (*s == ' ' || *s == '\r' || *s == '\n' || *s == '"') s++;
+        while (*s == ' ' || *s == '\r' || *s == '\n' || *s == '"')
+        {
+            s++;
+        }
         const char* e = s + strlen(s);
         while (e > s && (e[-1] == ' ' || e[-1] == '\r' || e[-1] == '\n' || e[-1] == '"'))
+        {
             e--;
+        }
         size_t n = (size_t)(e - s);
         if (n && n < outsz)
         {
-            memcpy(out, s, n);
+            (void)memcpy(out, s, n);
             out[n] = 0;
             ok = 1;
         }
@@ -327,10 +386,17 @@ static int service_avoided(const char* p, size_t len)
     for (size_t i = 0; i < sizeof SERVICE_AVOID / sizeof *SERVICE_AVOID; i++)
     {
         size_t kwl = strlen(SERVICE_AVOID[i]);
-        if (len < kwl) continue;
+        if (len < kwl)
+        {
+            continue;
+        }
         for (size_t j = 0; j + kwl <= len; j++)
+        {
             if (memcmp(p + j, SERVICE_AVOID[i], kwl) == 0)
+            {
                 return 1;
+            }
+        }
     }
     return 0;
 }
@@ -362,12 +428,15 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
             if (name[0] && strlen(name) == len && strncmp(p, name, len) == 0)
             {
                 size_t c = len < outsz - 1 ? len : outsz - 1;
-                memcpy(out, p, c);
+                (void)memcpy(out, p, c);
                 out[c] = 0;
                 return 1;
             }
         }
-        if (!e) break;
+        if (!e)
+        {
+            break;
+        }
         p = e + 1;
     }
     /* 回退优先选非规避项（如"中国移动"），避免自动登录误选限时/计费套餐；
@@ -377,7 +446,7 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
     if (pick)
     {
         size_t c = pick_len < outsz - 1 ? pick_len : outsz - 1;
-        memcpy(out, pick, c);
+        (void)memcpy(out, pick, c);
         out[c] = 0;
         return 1;
     }
@@ -390,13 +459,18 @@ int cmd_status(void)
      * 旧脚本按布尔判断（0/非 0）仍然兼容。
      * 1.9.2 起两个探测并行（同一 poll 循环、同一总 deadline），
      * 最坏耗时 ~2s（原串行 2s+2s）。 */
-    int online, preachable = 0;
+    int online;
+    int preachable = 0;
     char host[128];
     int port;
     if (portal_host_port(host, sizeof host, &port))
+    {
         online = is_online_ex(host, port, &preachable);
+    }
     else
+    {
         online = is_online(); /* portal 形态异常：退回纯在线判定 */
+    }
     int code = 1;
     const char* state = "未在线";
     if (online)
@@ -412,7 +486,7 @@ int cmd_status(void)
             state = "已在线但不在校园网（portal 不可达）";
         }
     }
-    puts(state);
+    (void)puts(state);
     log_status("在线状态: %s", state);
     return code;
 }
@@ -431,7 +505,10 @@ int auth_session_lock(void)
         return 1;
     }
     char path[600];
-    if (!state_path(path, sizeof path, ".lock")) return 0;
+    if (!state_path(path, sizeof path, ".lock"))
+    {
+        return 0;
+    }
     g_session_lock = compat_lock_file(path);
     if (!g_session_lock)
     {
@@ -475,7 +552,9 @@ static int login_impl(int force, int known_offline)
     char* body = NULL;
     char* svc_enc = NULL;
     char* lb = NULL;
-    http_buf probe = {0}, info = {0}, resp = {0};
+    http_buf probe = {0};
+    http_buf info = {0};
+    http_buf resp = {0};
     char url[512];
 
     int ret = 1;
@@ -497,25 +576,34 @@ static int login_impl(int force, int known_offline)
     if (!force && !g_dry_run && was_online)
     {
         LOG_INFO("已在线，无需认证");
-        puts("已在线");
+        (void)puts("已在线");
         log_status("已在线，跳过认证");
         return 0;
     }
-    if (force) LOG_INFO("force 模式：跳过在线短路，直接认证");
+    if (force)
+    {
+        LOG_INFO("force 模式：跳过在线短路，直接认证");
+    }
     if (g_dry_run && was_online)
+    {
         LOG_INFO("提示: 当前已在线，AC 一般不会下发劫持页，可能拿不到 queryString");
+    }
 
     /* 2. 抓劫持认证页，取 location.href（原脚本此处 2>/dev/null 静默失败） */
     LOG_DEBUG("探测 %s", probe_url());
-    http_req_ex(probe_url(), NULL, NULL, HTTP_QUIET, &probe);
+    (void)http_req_ex(probe_url(), NULL, NULL, HTTP_QUIET, &probe);
     LOG_DEBUG("探测页 %zu 字节", probe.len);
     redir = probe.data ? fetch_redirect_url(probe.data) : NULL;
     if (!redir || !*redir)
     {
         if (was_online)
+        {
             LOG_ERROR("未捕获认证页：当前已在线，AC 不下发劫持页（dry-run/logout 前请先断开或先注销）");
+        }
         else
+        {
             LOG_ERROR("已离线但未捕获认证页, 网络异常");
+        }
         goto done;
     }
     LOG_INFO("认证页跳转地址: %s", redir);
@@ -529,36 +617,53 @@ static int login_impl(int force, int known_offline)
     }
     LOG_INFO("queryString(原文): %s", qs);
     qs_enc = urlencode(qs);
-    if (!qs_enc) goto done;
+    if (!qs_enc)
+    {
+        goto done;
+    }
     LOG_DEBUG("queryString(一次编码): %s", qs_enc);
 
     /* 3. pageInfo：获取 RSA 公钥与运营商列表 */
     char referer[2048];
-    snprintf(referer, sizeof referer, "%s/index.jsp?%s", portal(), qs_enc);
+    (void)snprintf(referer, sizeof referer, "%s/index.jsp?%s", portal(), qs_enc);
     qse2 = urlencode(qs_enc); /* --data-urlencode：二次编码 */
-    if (!qse2) goto done;
+    if (!qse2)
+    {
+        goto done;
+    }
     body = malloc(strlen(qse2) + 32);
-    if (!body) goto done;
-    sprintf(body, "queryString=%s", qse2);
+    if (!body)
+    {
+        goto done;
+    }
+    (void)sprintf(body, "queryString=%s", qse2);
     LOG_TRACE("pageInfo 请求体: %s", body);
 
-    if (!portal_endpoint(url, sizeof url, "pageInfo")) goto done;
+    if (!portal_endpoint(url, sizeof url, "pageInfo"))
+    {
+        goto done;
+    }
     long code = http_req(url, body, referer, &info);
     /* 与原脚本一致：只看有没有拿到内容，不强制 200（AC 可能返回 302/其它状态但带 body） */
     if (code < 0 || !info.data || !info.data[0])
     {
         LOG_ERROR("pageInfo 请求失败 (HTTP %ld)", code);
-        if (info.data) LOG_ERROR("响应内容: %.300s", info.data);
+        if (info.data)
+        {
+            LOG_ERROR("响应内容: %.300s", info.data);
+        }
         LOG_DEBUG("若响应为空，先检查请求头：本 AC 缺少 User-Agent 时会返回 200 + 空 body");
         goto done;
     }
     if (code != 200)
+    {
         LOG_WARN("pageInfo 返回 HTTP %ld，继续按响应内容解析", code);
+    }
     log_response("pageInfo", &info);
 
-    char e_hex[256] = "", n_hex[600] = "";
-    extract_field(info.data, "publicKeyExponent", e_hex, sizeof e_hex);
-    extract_field(info.data, "publicKeyModulus", n_hex, sizeof n_hex);
+    char e_hex[256]= {0}, n_hex[600] = "";
+    (void)extract_field(info.data, "publicKeyExponent", e_hex, sizeof e_hex);
+    (void)extract_field(info.data, "publicKeyModulus", n_hex, sizeof n_hex);
 #if USE_ENCRYPT
     /* --plain 时用不到公钥，缺了也不拦（pageInfo 仍会请求：运营商列表还靠它） */
     if (!g_plain && (!e_hex[0] || !n_hex[0]))
@@ -576,7 +681,7 @@ static int login_impl(int force, int known_offline)
      * - 配置非空：单一候选（列表精确命中，或回退规避词表后的第一普通项）
      * - 配置为空：整个列表逐个尝试，规避词表项（校园网/免费等限时套餐）排最后；
      *   认证成功后把命中的运营商写回配置文件，下次直接精确命中 */
-    char service[256] = "", svc_list[1024] = "";
+    char service[256]= {0}, svc_list[1024] = "";
     char cands[16][256];
     int ncand = 0;
     if (fetch_services(qs, referer, svc_list, sizeof svc_list))
@@ -584,19 +689,22 @@ static int login_impl(int force, int known_offline)
         LOG_INFO("运营商列表: %s", svc_list);
         if (auth_service()[0])
         {
-            char picked[256] = "";
+            char picked[256]= {0};
             if (service_pick(svc_list, auth_service(), picked, sizeof picked))
             {
-                snprintf(cands[ncand++], sizeof cands[0], "%s", picked);
+                (void)snprintf(cands[ncand++], sizeof cands[0], "%s", picked);
                 if (strcmp(auth_service(), picked) == 0)
+                {
                     LOG_INFO("运营商: 列表命中 \"%s\"", picked);
+                }
                 else
-                    LOG_WARN("运营商: 配置值 \"%s\" 不在列表，改用 \"%s\"",
-                             auth_service(), picked);
+                {
+                    LOG_WARN("运营商: 配置值 \"%s\" 不在列表，改用 \"%s\"", auth_service(), picked);
+                }
             }
             else
             {
-                snprintf(cands[ncand++], sizeof cands[0], "%s", auth_service());
+                (void)snprintf(cands[ncand++], sizeof cands[0], "%s", auth_service());
                 LOG_WARN("运营商: 列表为空，沿用 \"%s\"", auth_service());
             }
         }
@@ -613,11 +721,14 @@ static int login_impl(int force, int known_offline)
                     if (len && service_avoided(p, len) == pass)
                     {
                         size_t c = len < sizeof cands[0] - 1 ? len : sizeof cands[0] - 1;
-                        memcpy(cands[ncand], p, c);
+                        (void)memcpy(cands[ncand], p, c);
                         cands[ncand][c] = 0;
                         ncand++;
                     }
-                    if (!e) break;
+                    if (!e)
+                    {
+                        break;
+                    }
                     p = e + 1;
                 }
             }
@@ -626,14 +737,16 @@ static int login_impl(int force, int known_offline)
     }
     else
     {
-        snprintf(cands[ncand++], sizeof cands[0], "%s", auth_service());
+        (void)snprintf(cands[ncand++], sizeof cands[0], "%s", auth_service());
         LOG_WARN("运营商: 未能获取列表，沿用 \"%s\"", auth_service());
     }
 
     /* 4. 提取 mac，按需 RSA 加密密码 */
-    char mac[64] = "";
+    char mac[64]= {0};
     if (!extract_mac(qs, mac, sizeof mac))
+    {
         LOG_WARN("queryString 里没有 mac 参数，加密结果可能与服务端不匹配");
+    }
     LOG_DEBUG("mac: %s", mac);
 
     /* 1024 字符足够：1024bit 模数每分块 256 字符（可容 4 分块 = 504 字节明文），
@@ -643,7 +756,7 @@ static int login_impl(int force, int known_offline)
 #if USE_ENCRYPT
     if (g_plain)
     {
-        snprintf(pwd_sub, sizeof pwd_sub, "%s", auth_password());
+        (void)snprintf(pwd_sub, sizeof pwd_sub, "%s", auth_password());
         LOG_WARN("--plain：密码明文提交（明文会出现在网络与调试日志里，仅供排查用）");
     }
     else
@@ -669,20 +782,26 @@ static int login_impl(int force, int known_offline)
     for (int ci = 0; ci < ncand && !login_ok; ci++)
     {
         size_t cl = strnlen(cands[ci], sizeof service - 1);
-        memcpy(service, cands[ci], cl);
+        (void)memcpy(service, cands[ci], cl);
         service[cl] = 0;
-        snprintf(g_last_service, sizeof g_last_service, "%s", service);
+        (void)snprintf(g_last_service, sizeof g_last_service, "%s", service);
         free(svc_enc);
         free(lb);
         free(resp.data);
         resp.data = NULL;
         svc_enc = urlencode(service);
-        if (!svc_enc) goto done;
+        if (!svc_enc)
+        {
+            goto done;
+        }
         size_t lbsz = strlen(auth_user()) + strlen(pwd_sub) + strlen(svc_enc)
             + strlen(qs_enc) + 256;
         lb = malloc(lbsz);
-        if (!lb) goto done;
-        snprintf(lb, lbsz,
+        if (!lb)
+        {
+            goto done;
+        }
+        (void)snprintf(lb, lbsz,
                  "userId=%s&password=%s&service=%s&queryString=%s"
                  "&operatorPwd=&operatorUserId=&validcode=&passwordEncrypt=%s",
                  auth_user(), pwd_sub, svc_enc, qs_enc, enc ? "true" : "false");
@@ -696,48 +815,61 @@ static int login_impl(int force, int known_offline)
         }
 
         log_form(LOG_LEVEL_DEBUG, "提交登录表单:", lb);
-        if (!portal_endpoint(url, sizeof url, "login")) goto done;
+        if (!portal_endpoint(url, sizeof url, "login"))
+        {
+            goto done;
+        }
         code = http_req(url, lb, referer, &resp); /* 浏览器登录时同源 XHR 必带 Referer */
         if (code < 0 || !resp.data || !resp.data[0])
         {
             LOG_ERROR("login 请求失败 (HTTP %ld)", code);
-            if (resp.data) LOG_ERROR("响应内容: %.300s", resp.data);
+            if (resp.data)
+            {
+                LOG_ERROR("响应内容: %.300s", resp.data);
+            }
             goto done; /* 网络错误与运营商无关，不做候选重试 */
         }
         if (code != 200)
+        {
             LOG_WARN("login 返回 HTTP %ld，继续按响应内容解析", code);
+        }
         log_response("login", &resp);
 
         /* 6. 提取 userIndex：有 = 该运营商认证成功 */
-        char ui[1024] = "";
-        extract_field(resp.data, "userIndex", ui, sizeof ui);
+        char ui[1024]= {0};
+        (void)extract_field(resp.data, "userIndex", ui, sizeof ui);
         if (ui[0])
         {
             if (ncand > 1)
-                LOG_INFO("运营商 \"%s\" 认证成功（第 %d/%d 个候选）",
-                         service, ci + 1, ncand);
+            {
+                LOG_INFO("运营商 \"%s\" 认证成功（第 %d/%d 个候选）", service, ci + 1, ncand);
+            }
             if (state_write(UI_FILE, ui))
             {
                 char path[600];
                 if (state_path(path, sizeof path, UI_FILE))
+                {
                     LOG_INFO("userIndex 已保存: %s", path);
+                }
             }
             else
             {
                 LOG_WARN("userIndex 未写入状态目录，后续 logout 需要手动传 index");
             }
             /* 显示原始 hex（与提交给服务端的值一致）；要解码形式用 `userindex` 子命令 */
-            printf("认证成功！ userIndex: %s\n", ui);
+            (void)printf("认证成功！ userIndex: %s\n", ui);
             ret = 0;
             login_ok = 1;
             break;
         }
         /* 该候选被拒：还有候选就继续试，没有则整体失败 */
-        char msg[256] = "";
-        extract_field(resp.data, "message", msg, sizeof msg);
+        char msg[256]= {0};
+        (void)extract_field(resp.data, "message", msg, sizeof msg);
         if (ci + 1 < ncand)
+        {
             LOG_WARN("运营商 \"%s\" 被拒（%s），尝试下一个候选",
                      service, msg[0] ? msg : "未知原因");
+        }
         else
         {
             LOG_ERROR("认证失败: %s", msg[0] ? msg : "(响应里没有 userIndex)");
@@ -746,7 +878,9 @@ static int login_impl(int force, int known_offline)
         }
     }
     if (!login_ok)
+    {
         goto done; /* 全部候选未成功（防御：正常路径上面已处理） */
+    }
 
 
 done:
@@ -764,18 +898,26 @@ done:
 
     /* ---- 系统日志：每次运行一条结果（受 logread 查看，不受 -q/-v 影响）---- */
     if (ret == 0 && g_dry_run)
+    {
         log_status("dry-run: 已取到公钥并加密，未提交认证");
+    }
     else if (ret == 0)
+    {
         log_status("认证成功");
+    }
     else
-        log_status("认证失败: %s",
-                   log_first_error()[0] ? log_first_error() : "未知原因");
+    {
+        log_status("认证失败: %s", log_first_error()[0] ? log_first_error() : "未知原因");
+    }
     return ret;
 }
 
 int cmd_login(int force)
 {
-    if (!auth_session_lock()) return 1;
+    if (!auth_session_lock())
+    {
+        return 1;
+    }
     /* 校园网预检：探测可能显示"在线"（能上外网），但那不代表在校园网。
      * portal 不可达时明确退出，避免在家/热点上 cron 误报"已在线"。 */
     if (!portal_reachable())
@@ -794,16 +936,17 @@ static int logout_once(const char* user_index)
 {
     LOG_INFO("===== 注销 (userIndex=%s) =====", user_index);
     char body[1536];
-    snprintf(body, sizeof body, "userIndex=%s", user_index);
+    (void)snprintf(body, sizeof body, "userIndex=%s", user_index);
     log_form(LOG_LEVEL_DEBUG, "提交注销表单:", body);
 
-    char url[512], ref[256];
+    char url[512];
+    char ref[256];
     if (!portal_endpoint(url, sizeof url, "logout"))
     {
         log_status("注销失败: portal 地址无效");
         return 2;
     }
-    snprintf(ref, sizeof ref, "%s/index.jsp", portal());
+    (void)snprintf(ref, sizeof ref, "%s/index.jsp", portal());
 
     http_buf resp = {0};
     long code = http_req_ex(url, body, ref, HTTP_FOLLOW, &resp);
@@ -819,13 +962,16 @@ static int logout_once(const char* user_index)
     }
     else
     {
-        char result[64] = "";
-        if (resp.data) extract_field(resp.data, "result", result, sizeof result);
+        char result[64]= {0};
+        if (resp.data)
+        {
+            (void)extract_field(resp.data, "result", result, sizeof result);
+        }
         if (!strcmp(result, "success"))
         {
             state_remove(UI_FILE); /* 会话已结束，状态文件不再有效 */
             LOG_INFO("注销成功，已清理状态文件");
-            printf("下线成功! userIndex: %s\n", user_index);
+            (void)printf("下线成功! userIndex: %s\n", user_index);
             log_status("注销成功");
             ret = 0;
         }
@@ -845,7 +991,10 @@ static int logout_once(const char* user_index)
 
 int cmd_logout(const char* user_index)
 {
-    if (!auth_session_lock()) return 1;
+    if (!auth_session_lock())
+    {
+        return 1;
+    }
     /* 校园网预检：portal 不可达时三级来源全部无从谈起 */
     if (!portal_reachable())
     {
@@ -854,15 +1003,20 @@ int cmd_logout(const char* user_index)
         return 1;
     }
 
-    char stored[1024] = "";
+    char stored[1024]= {0};
     if (!user_index && state_read(UI_FILE, stored, sizeof stored) && stored[0])
+    {
         user_index = stored;
+    }
 
     int ret = 2; /* 2=网络错误 1=服务端未确认 0=确认成功 */
-    if (user_index) ret = logout_once(user_index);
+    if (user_index)
+    {
+        ret = logout_once(user_index);
+    }
 
     /* 来源优先级：指定参数/存储值 -> 服务端要回。每级失败才降级。 */
-    char remote[300] = "";
+    char remote[300]= {0};
     if (ret != 0)
     {
         /* 服务端要回：状态文件丢失（tmpfs 重启）或存储值被拒时，
@@ -892,7 +1046,10 @@ int cmd_logout(const char* user_index)
 
 int cmd_reauth(const char* user_index)
 {
-    if (!auth_session_lock()) return 1;
+    if (!auth_session_lock())
+    {
+        return 1;
+    }
     /* 校园网预检（logout + login 两步都依赖 portal） */
     if (!portal_reachable())
     {
@@ -903,11 +1060,17 @@ int cmd_reauth(const char* user_index)
 
     LOG_INFO("===== reauth: 先注销再认证 =====");
     if (user_index)
+    {
         LOG_INFO("第一步: 注销上一个会话（指定 userIndex）");
+    }
     else
+    {
         LOG_INFO("第一步: 注销上一个会话（无 userIndex 时向服务端要回）");
+    }
     if (cmd_logout(user_index) != 0)
+    {
         LOG_WARN("注销未确认，仍继续尝试重新认证");
+    }
 
     LOG_DEBUG("等待 %d ms 让 AC 释放会话", REAUTH_DELAY_MS);
     msleep(REAUTH_DELAY_MS);
@@ -924,101 +1087,121 @@ int cmd_reauth(const char* user_index)
  */
 int cmd_doctor(const char* cfg_path)
 {
-    printf("cqie-auth 环境诊断\n\n");
+    (void)printf("cqie-auth 环境诊断\n\n");
     long t0 = log_tick_ms();
     int problems = 0;
     char cfg_portal[256];
-    snprintf(cfg_portal, sizeof cfg_portal, "%s", portal()); /* 配置链 portal（[2/4] 发现前的值） */
+    (void)snprintf(cfg_portal, sizeof cfg_portal, "%s", portal()); /* 配置链 portal（[2/4] 发现前的值） */
 
     /* [1/4] 外网连通 */
-    printf("[1/4] 外网连通（并行探测 204 端点）\n");
+    (void)printf("[1/4] 外网连通（并行探测 204 端点）\n");
     int online = is_online();
     if (online)
-        printf("      OK 能上外网（%ld ms）\n", log_tick_ms() - t0);
+    {
+        (void)printf("      OK 能上外网（%ld ms）\n", log_tick_ms() - t0);
+    }
     else
     {
-        printf("      XX 不能上外网（%ld ms）\n", log_tick_ms() - t0);
+        (void)printf("      XX 不能上外网（%ld ms）\n", log_tick_ms() - t0);
         problems++;
     }
 
     /* [2/4] 探测地址：可达性 + 劫持跳转验证。
      * 注意：已认证状态下网关不劫持，无跳转响应属正常现象，不计入 problems。 */
-    printf("[2/4] 探测地址 %s\n", probe_url());
-    char dportal[256] = "", dlist[1024] = "";
+    (void)printf("[2/4] 探测地址 %s\n", probe_url());
+    char dportal[256]= {0}, dlist[1024] = "";
     int discovered = auth_discover_portal(dportal, sizeof dportal, dlist, sizeof dlist);
     if (discovered)
     {
         /* auth_discover_portal 已把发现的 portal 设为当前生效值；
          * doctor 里改回配置链的值不必要——显示即可，进程随即退出 */
-        printf("      OK 可达，劫持跳转正常\n");
-        printf("      认证页: %s\n", dportal);
+        (void)printf("      OK 可达，劫持跳转正常\n");
+        (void)printf("      认证页: %s\n", dportal);
     }
     else
     {
-        printf("      -- 不可达或无劫持响应（已认证时属正常；未认证时说明地址失效）\n");
+        (void)printf("      -- 不可达或无劫持响应（已认证时属正常；未认证时说明地址失效）\n");
     }
 
     /* [3/4] 认证服务器可达性。
      * [2/4] 的发现值已即时生效（auth_discover_portal 内 auth_set_portal），
      * 本环检查的可能是发现的认证页而非配置 portal——两者不同时明确告知。 */
-    printf("[3/4] 认证服务器 %s\n", portal());
+    (void)printf("[3/4] 认证服务器 %s\n", portal());
     if (discovered && strcmp(dportal, cfg_portal) != 0)
-        printf("      注意: 与配置 portal=%s 不同（发现值已临时生效，本环检查的是发现值）\n",
+    {
+        (void)printf("      注意: 与配置 portal=%s 不同（发现值已临时生效，本环检查的是发现值）\n",
                cfg_portal);
+    }
     t0 = log_tick_ms();
     int preachable = portal_reachable();
     if (preachable)
-        printf("      OK 可达（%ld ms）\n", log_tick_ms() - t0);
+    {
+        (void)printf("      OK 可达（%ld ms）\n", log_tick_ms() - t0);
+    }
     else
     {
-        printf("      XX 不可达（%ld ms）\n", log_tick_ms() - t0);
+        (void)printf("      XX 不可达（%ld ms）\n", log_tick_ms() - t0);
         problems++;
     }
 
     /* [4/4] 运营商列表（依赖探测与 portal，二者任一失败则标记跳过） */
-    printf("[4/4] 运营商列表\n");
+    (void)printf("[4/4] 运营商列表\n");
     if (discovered && preachable)
     {
-        printf("      OK %s\n", dlist[0] ? dlist : "(空)");
+        (void)printf("      OK %s\n", dlist[0] ? dlist : "(空)");
     }
     else
     {
-        printf("      -- 前置环节失败，未拉取\n");
+        (void)printf("      -- 前置环节失败，未拉取\n");
     }
 
     /* [5/5] 配置检查 */
-    printf("[5/5] 配置\n");
-    printf("      文件: %s\n", cfg_path && cfg_path[0] ? cfg_path : "(未指定)");
+    (void)printf("[5/5] 配置\n");
+    (void)printf("      文件: %s\n", cfg_path && cfg_path[0] ? cfg_path : "(未指定)");
     if (auth_user()[0] && auth_password()[0])
-        printf("      OK user/password 已配置（user=%s）\n", auth_user());
+    {
+        (void)printf("      OK user/password 已配置（user=%s）\n", auth_user());
+    }
     else
     {
-        printf("      XX user/password 未配置（走 --setup 向导或编辑配置文件）\n");
+        (void)printf("      XX user/password 未配置（走 --setup 向导或编辑配置文件）\n");
         problems++;
     }
-    printf("      当前生效: service=%s portal=%s\n",
+    (void)printf("      当前生效: service=%s portal=%s\n",
            auth_service()[0] ? auth_service() : "(空=自动)",
            portal());
 
     /* verdict：按 online/preachable 矩阵给建议（探测无劫持响应属已认证常态，单独提示） */
-    printf("\n结论: ");
+    (void)printf("\n结论: ");
     if (online && preachable)
     {
         if (discovered)
-            printf("环境正常（未认证态），cqie-auth login 即可上线\n");
+        {
+            (void)printf("环境正常（未认证态），cqie-auth login 即可上线\n");
+        }
         else
-            printf("链路正常；探测地址无劫持响应通常表示已在线。"
+        {
+            (void)printf("链路正常；探测地址无劫持响应通常表示已在线。"
                    "若 login 仍失败，换 probe= 地址再试\n");
+        }
     }
     else if (online && !preachable)
-        printf("能上外网但认证服务器不可达——你不在校园网内，或 portal 地址已变更"
+    {
+        (void)printf("能上外网但认证服务器不可达——你不在校园网内，或 portal 地址已变更"
                "（用 --portal 或配置文件 portal= 更新）\n");
+    }
     else if (!online && preachable)
-        printf("在校园网内但尚未认证——cqie-auth login 即可上线\n");
+    {
+        (void)printf("在校园网内但尚未认证——cqie-auth login 即可上线\n");
+    }
     else
-        printf("外网与认证服务器均不可达——完全断网，或你不在校园网\n");
+    {
+        (void)printf("外网与认证服务器均不可达——完全断网，或你不在校园网\n");
+    }
     if (!discovered)
-        printf("提示: 探测地址无劫持响应时，建议换 probe= 地址（保持 http:// 纯 IP 形式）\n");
+    {
+        (void)printf("提示: 探测地址无劫持响应时，建议换 probe= 地址（保持 http:// 纯 IP 形式）\n");
+    }
 
     return problems ? 1 : 0;
 }
@@ -1037,6 +1220,6 @@ int cmd_userindex(const char* hex)
     }
     char dec[513];
     ui_decode(hex, dec, sizeof dec);
-    puts(dec);
+    (void)puts(dec);
     return 0;
 }

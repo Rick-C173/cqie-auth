@@ -11,13 +11,19 @@
 char* urlencode(const char* s)
 {
     static const char hx[] = "0123456789ABCDEF";
-    if (!s) return NULL;
+    if (!s)
+    {
+        return NULL;
+    }
     /* 上界分配（每字符最多扩到 3 字节），单遍写入——两遍遍历+精确分配的
      * 旧写法逻辑正确，但分析器无法证明两次 isalnum/strchr 判定一致，
      * 会报 security.ArrayBound；上界分配让安全性可直接推导。 */
     size_t n = strlen(s);
     char* o = malloc(n * 3 + 1);
-    if (!o) return NULL;
+    if (!o)
+    {
+        return NULL;
+    }
     char* w = o;
     for (const char* p = s; *p; p++)
     {
@@ -40,16 +46,31 @@ char* urlencode(const char* s)
 int extract_field(const char* page, const char* field, char* out, size_t outsz)
 {
     char pat[128];
-    snprintf(pat, sizeof pat, "\"%s\"", field);
+    (void)snprintf(pat, sizeof pat, "\"%s\"", field);
     const char* p = strstr(page, pat);
-    if (!p) return 0;
+    if (!p)
+    {
+        return 0;
+    }
     p = strchr(p + strlen(pat), ':');
-    if (!p) return 0;
-    while (*++p == ' ');
-    if (*p != '"') return 0;
+    if (!p)
+    {
+        return 0;
+    }
+    while (*++p == ' ')
+    {
+        ;
+    }
+    if (*p != '"')
+    {
+        return 0;
+    }
     p++;
     size_t i = 0;
-    while (*p && *p != '"' && i + 1 < outsz) out[i++] = *p++;
+    while (*p && *p != '"' && i + 1 < outsz)
+    {
+        out[i++] = *p++;
+    }
     out[i] = 0;
     return i > 0;
 }
@@ -57,13 +78,22 @@ int extract_field(const char* page, const char* field, char* out, size_t outsz)
 char* fetch_redirect_url(const char* page)
 {
     const char* p = strstr(page, "location.href='");
-    if (!p) return NULL;
+    if (!p)
+    {
+        return NULL;
+    }
     p += 15;
     const char* q = strchr(p, '\'');
-    if (!q || q == p) return NULL;
+    if (!q || q == p)
+    {
+        return NULL;
+    }
     char* r = malloc((size_t)(q - p) + 1);
-    if (!r) return NULL;
-    memcpy(r, p, (size_t)(q - p));
+    if (!r)
+    {
+        return NULL;
+    }
+    (void)memcpy(r, p, (size_t)(q - p));
     r[q - p] = 0;
     return r;
 }
@@ -82,13 +112,22 @@ int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz)
      * 参数名必须完整（前面是 & 或串首，后面紧跟 =），避免 wlanmac 之类误匹配 */
     while ((p = strstr(p, name)) != NULL)
     {
-        if ((p == qs || p[-1] == '&') && p[nl] == '=') m = p;
+        if ((p == qs || p[-1] == '&') && p[nl] == '=')
+        {
+            m = p;
+        }
         p += nl;
     }
-    if (!m) return 0;
+    if (!m)
+    {
+        return 0;
+    }
     const char* v = m + nl + 1;
     size_t i = 0;
-    while (*v && *v != '&' && i + 1 < outsz) out[i++] = *v++;
+    while (*v && *v != '&' && i + 1 < outsz)
+    {
+        out[i++] = *v++;
+    }
     out[i] = 0;
     return i > 0;
 }
@@ -100,24 +139,45 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
     for (const char* p = s; *p; p++)
     {
         unsigned char c = (unsigned char)*p;
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue; /* xxd 跳过空白 */
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+        {
+            continue; /* xxd 跳过空白 */
+        }
         int v;
-        if (c >= '0' && c <= '9') v = c - '0';
-        else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
-        else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
-        else break; /* 其它字符终止 */
+        if (c >= '0' && c <= '9')
+        {
+            v = c - '0';
+        }
+        else if (c >= 'a' && c <= 'f')
+        {
+            v = c - 'a' + 10;
+        }
+        else if (c >= 'A' && c <= 'F')
+        {
+            v = c - 'A' + 10;
+        }
+        else
+        {
+            break; /* 其它字符终止 */
+        }
         if (hi < 0)
         {
             hi = v;
         }
         else
         {
-            if (n + 1 >= outsz) break;
+            if (n + 1 >= outsz)
+            {
+                break;
+            }
             out[n++] = (char)((hi << 4) | v);
             hi = -1;
         }
     }
-    if (n < outsz) out[n] = 0; /* 便于当字符串打印 */
+    if (n < outsz)
+    {
+        out[n] = 0; /* 便于当字符串打印 */
+    }
     return n;
 }
 
@@ -127,27 +187,45 @@ void hex_print_decode(const char* s)
      * 原来是 8192 的 static（.bss），白白占着镜像。 */
     static char buf[2048];
     size_t n = hex_decode(s, buf, sizeof buf - 1);
-    if (n) fwrite(buf, 1, n, stdout);
-    putchar('\n');
+    if (n)
+    {
+        (void)fwrite(buf, 1, n, stdout);
+    }
+    (void)putchar('\n');
 }
 
 int file_read_trim(const char* path, char* out, size_t outsz)
 {
     FILE* f = fopen(path, "r");
-    if (!f) return 0;
+    if (!f)
+    {
+        return 0;
+    }
     size_t n = fread(out, 1, outsz - 1, f);
-    fclose(f);
+    (void)fclose(f);
     out[n] = 0;
     char* s = out;
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+    {
+        s++;
+    }
     char* e = s + strlen(s);
-    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n')) *--e = 0;
-    if (s != out) memmove(out, s, strlen(s) + 1);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
+    {
+        *--e = 0;
+    }
+    if (s != out)
+    {
+        (void)memmove(out, s, strlen(s) + 1);
+    }
     return 1;
 }
 
 void msleep(int ms)
 {
-    if (ms <= 0) return;
+    if (ms <= 0)
+    {
+        return;
+    }
     compat_msleep(ms);
 }

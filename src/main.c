@@ -30,7 +30,7 @@ static void usage(FILE* out, const char* argv0)
 {
 #if CQIE_MINIMAL_HELP
     /* 精简版：OpenWrt 构建用，砍掉长说明（.rodata 里最大的一块），保留分区排版 */
-    fprintf(out,
+    (void)fprintf(out,
             "cqie-auth %s\n"
             "校园网(锐捷 eportal)认证工具\n"
             "\n"
@@ -67,7 +67,7 @@ static void usage(FILE* out, const char* argv0)
             "日志: logread | grep cqie-auth\n",
             CQIE_VERSION, argv0);
 #else
-    fprintf(out,
+    (void)fprintf(out,
             "cqie-auth %s - 校园网(锐捷 eportal)认证工具\n"
             "\n"
             "用法:\n"
@@ -145,7 +145,7 @@ static void usage(FILE* out, const char* argv0)
  */
 static int config_update_key(const char* path, const char* key, const char* val)
 {
-    char body[4096] = "";
+    char body[4096]= {0};
     int replaced = 0;
     FILE* in = fopen(path, "r");
     if (in)
@@ -154,52 +154,75 @@ static int config_update_key(const char* path, const char* key, const char* val)
     while (fgets(line, sizeof line, in))
     {
         const char* p = line;
-        while (*p == ' ' || *p == '\t') p++;
+        while (*p == ' ' || *p == '\t')
+        {
+            p++;
+        }
         if (!replaced && strncmp(p, key, strlen(key)) == 0)
         {
             const char* q = p + strlen(key);
-            while (*q == ' ' || *q == '\t') q++;
+            while (*q == ' ' || *q == '\t')
+            {
+                q++;
+            }
             if (*q == '=' || *q == '\n' || *q == 0)
             {
                 char add[600];
-                snprintf(add, sizeof add, "%s=%s\n", key, val);
-                size_t bl = strlen(body);
-                if (bl + strlen(add) >= sizeof body) { fclose(in); return 0; }
-                snprintf(body + bl, sizeof body - bl, "%s", add);
+                (void)snprintf(add, sizeof add, "%s=%s\n", key, val);
+                size_t body_len = strlen(body);
+                if (body_len + strlen(add) >= sizeof body)
+                {
+                    (void)fclose(in);
+                    return 0;
+                }
+                (void)snprintf(body + body_len, sizeof body - body_len, "%s", add);
                 replaced = 1;
                 continue;
             }
         }
-        size_t bl = strlen(body);
-        if (bl + strlen(line) >= sizeof body) { fclose(in); return 0; }
-        snprintf(body + bl, sizeof body - bl, "%s", line);
+        size_t body_len = strlen(body);
+        if (body_len + strlen(line) >= sizeof body)
+        {
+            (void)fclose(in);
+            return 0;
+        }
+        (void)snprintf(body + body_len, sizeof body - body_len, "%s", line);
     }
-    fclose(in);
+    (void)fclose(in);
     }
     if (!replaced)
     {
         size_t n = strlen(body);
         char add[600];
-        if (n && body[n - 1] != '\n') snprintf(body + n, sizeof body - n, "\n");
-        snprintf(add, sizeof add, "%s=%s\n", key, val);
+        if (n && body[n - 1] != '\n')
+        {
+            (void)snprintf(body + n, sizeof body - n, "\n");
+        }
+        (void)snprintf(add, sizeof add, "%s=%s\n", key, val);
         n = strlen(body);
-        if (n + strlen(add) >= sizeof body) return 0;
-        snprintf(body + n, sizeof body - n, "%s", add);
+        if (n + strlen(add) >= sizeof body)
+        {
+            return 0;
+        }
+        (void)snprintf(body + n, sizeof body - n, "%s", add);
     }
     char tmp[640];
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    (void)snprintf(tmp, sizeof tmp, "%s.tmp", path);
     FILE* out = fopen(tmp, "w");
-    if (!out) return 0;
-    fputs(body, out);
-    fclose(out);
+    if (!out)
+    {
+        return 0;
+    }
+    (void)fputs(body, out);
+    (void)fclose(out);
 #ifndef _WIN32
-    chmod(tmp, 0600);
+    (void)chmod(tmp, S_IRUSR | S_IWUSR);
     if (rename(tmp, path) != 0)
 #else
     if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING))
 #endif
     {
-        remove(tmp);
+        (void)remove(tmp);
         return 0;
     }
     return 1;
@@ -213,12 +236,18 @@ static int config_update_key(const char* path, const char* key, const char* val)
 static int read_line(char* buf, size_t sz, int echo_off)
 {
     int ok;
-    if (echo_off) compat_echo(0);
+    if (echo_off)
+    {
+        compat_echo(0);
+    }
     ok = fgets(buf, (int)sz, stdin) != NULL;
     if (ok)
     {
         size_t n = strlen(buf);
-        while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
+        while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+        {
+            buf[--n] = 0;
+        }
     }
     else
     {
@@ -227,7 +256,7 @@ static int read_line(char* buf, size_t sz, int echo_off)
     if (echo_off)
     {
         compat_echo(1);
-        printf("\n"); /* 回显关闭时换行不会显示，补一个 */
+        (void)printf("\n"); /* 回显关闭时换行不会显示，补一个 */
     }
     return ok;
 }
@@ -236,24 +265,30 @@ static int read_line(char* buf, size_t sz, int echo_off)
 static void make_parent_dirs(const char* path)
 {
     char dir[600];
-    snprintf(dir, sizeof dir, "%s", path);
+    (void)snprintf(dir, sizeof dir, "%s", path);
     char* slash = strrchr(dir, '/');
 #ifdef _WIN32
     char* bs = strrchr(dir, '\\');
-    if (bs && (!slash || bs > slash)) slash = bs;
+    if (bs && (!slash || bs > slash))
+    {
+        slash = bs;
+    }
 #endif
-    if (!slash || slash == dir) return;
+    if (!slash || slash == dir)
+    {
+        return;
+    }
     *slash = 0;
     for (char* p = dir + 1; *p; p++)
     {
         if (*p == '/')
         {
             *p = 0;
-            compat_mkdir(dir); /* 已存在时报错属正常，忽略 */
+            (void)compat_mkdir(dir); /* 已存在时报错属正常，忽略 */
             *p = '/';
         }
     }
-    compat_mkdir(dir);
+    (void)compat_mkdir(dir);
 }
 
 /*
@@ -266,7 +301,9 @@ static void make_parent_dirs(const char* path)
 
 struct WizardOut
 {
-    char user[128], pass[256], svc[128];
+    char user[128];
+    char pass[256];
+    char svc[128];
     char portal[256]; /* 探测发现/用户确认的认证地址；空=沿用默认 */
     char probe[512];  /* 用户指定的探测地址；空=沿用默认 */
     char path[600];   /* 配置文件路径 */
@@ -279,14 +316,14 @@ static int write_config_file(const struct WizardOut* w)
     FILE* probe = fopen(w->path, "r");
     if (probe)
     {
-        fclose(probe);
-        printf("配置文件已存在，覆盖? (y/N): ");
-        fflush(stdout);
-        char ans[16] = "";
-        read_line(ans, sizeof ans, 0);
+        (void)fclose(probe);
+        (void)printf("配置文件已存在，覆盖? (y/N): ");
+        (void)fflush(stdout);
+        char ans[16]= {0};
+        (void)read_line(ans, sizeof ans, 0);
         if (ans[0] != 'y' && ans[0] != 'Y')
         {
-            printf("已取消，未写入。\n");
+            (void)printf("已取消，未写入。\n");
             return 0;
         }
     }
@@ -294,23 +331,29 @@ static int write_config_file(const struct WizardOut* w)
     FILE* f = fopen(w->path, "w");
     if (!f)
     {
-        fprintf(stderr,
+        (void)fprintf(stderr,
                 "无法写入 %s（权限不足？若 exe 目录只读，请用 --config 指定可写位置）\n",
                 w->path);
         return 0;
     }
-    fprintf(f,
+    (void)fprintf(f,
             "# cqie-auth 凭据配置（key=value，# 注释；示例见 cqie-auth.conf.example）\n"
             "# service 留空 = 自动逐项尝试运营商并写回；建议本文件权限 600\n");
-    if (w->portal[0]) fprintf(f, "portal=%s\n", w->portal);
-    if (w->probe[0]) fprintf(f, "probe=%s\n", w->probe);
-    fprintf(f, "user=%s\npassword=%s\nservice=%s\n", w->user, w->pass, w->svc);
-    fclose(f);
+    if (w->portal[0])
+    {
+        (void)fprintf(f, "portal=%s\n", w->portal);
+    }
+    if (w->probe[0])
+    {
+        (void)fprintf(f, "probe=%s\n", w->probe);
+    }
+    (void)fprintf(f, "user=%s\npassword=%s\nservice=%s\n", w->user, w->pass, w->svc);
+    (void)fclose(f);
 #ifndef _WIN32
-    chmod(w->path, 0600); /* 凭据文件只允许属主读写 */
-    printf("已写入 %s (权限 600)\n", w->path);
+    (void)chmod(w->path, S_IRUSR | S_IWUSR); /* 凭据文件只允许属主读写 */
+    (void)printf("已写入 %s (权限 600)\n", w->path);
 #else
-    printf("已写入 %s\n", w->path);
+    (void)printf("已写入 %s\n", w->path);
 #endif
     return 1;
 }
@@ -322,49 +365,73 @@ static int write_config_file(const struct WizardOut* w)
  */
 static int wizard_collect(struct WizardOut* w, const char* def_probe)
 {
-    printf("首次设置：收集认证信息（完成后实测验证，通过才写入配置）\n");
+    (void)printf("首次设置：收集认证信息（完成后实测验证，通过才写入配置）\n");
 
     while (!w->user[0])
     {
-        printf("用户名: ");
-        fflush(stdout);
-        if (!read_line(w->user, sizeof w->user, 0)) goto eof;
+        (void)printf("用户名: ");
+        (void)fflush(stdout);
+        if (!read_line(w->user, sizeof w->user, 0))
+        {
+            goto eof;
+        }
     }
 
     for (;;)
     {
-        printf("密码 (不回显): ");
-        fflush(stdout);
-        if (!read_line(w->pass, sizeof w->pass, 1)) goto eof;
-        if (w->pass[0]) break;
-        printf("密码不能为空。\n");
+        (void)printf("密码 (不回显): ");
+        (void)fflush(stdout);
+        if (!read_line(w->pass, sizeof w->pass, 1))
+        {
+            goto eof;
+        }
+        if (w->pass[0])
+        {
+            break;
+        }
+        (void)printf("密码不能为空。\n");
     }
 
-    printf("探测地址 (回车=%s)：用于触发校园网认证页\n", def_probe);
+    (void)printf("探测地址 (回车=%s)：用于触发校园网认证页\n", def_probe);
     {
-        char tmp[512] = "";
-        if (!read_line(tmp, sizeof tmp, 0)) goto eof;
-        if (tmp[0]) snprintf(w->probe, sizeof w->probe, "%s", tmp);
+        char tmp[512]= {0};
+        if (!read_line(tmp, sizeof tmp, 0))
+        {
+            goto eof;
+        }
+        if (tmp[0])
+        {
+            (void)snprintf(w->probe, sizeof w->probe, "%s", tmp);
+        }
     }
 
-    printf("配置文件路径 (回车=%s): ", w->path);
-    fflush(stdout);
+    (void)printf("配置文件路径 (回车=%s): ", w->path);
+    (void)fflush(stdout);
     {
-        char tmp[600] = "";
-        if (!read_line(tmp, sizeof tmp, 0)) goto eof;
-        if (tmp[0]) snprintf(w->path, sizeof w->path, "%s", tmp);
+        char tmp[600]= {0};
+        if (!read_line(tmp, sizeof tmp, 0))
+        {
+            goto eof;
+        }
+        if (tmp[0])
+        {
+            (void)snprintf(w->path, sizeof w->path, "%s", tmp);
+        }
     }
 
     /* 已在线：无法用登录验证凭据，询问是否直接写入 */
     if (is_online())
     {
-        printf("当前已在线（能直接上外网），凭据将不做在线验证直接写入。确认? (y/N): ");
-        fflush(stdout);
-        char ans[16] = "";
-        if (!read_line(ans, sizeof ans, 0)) goto eof;
+        (void)printf("当前已在线（能直接上外网），凭据将不做在线验证直接写入。确认? (y/N): ");
+        (void)fflush(stdout);
+        char ans[16]= {0};
+        if (!read_line(ans, sizeof ans, 0))
+        {
+            goto eof;
+        }
         if (ans[0] != 'y' && ans[0] != 'Y')
         {
-            printf("已取消。\n");
+            (void)printf("已取消。\n");
             return 0;
         }
         w->skip_verify = 1;
@@ -376,10 +443,10 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
      *（首次运行时配置里没有凭据，否则空账号拉列表；返回后 main 流程会再设一遍） */
     auth_set_credentials(w->user, w->pass, w->svc);
     auth_set_probe(w->probe[0] ? w->probe : NULL);
-    printf("正在获取运营商列表...\n");
-    fflush(stdout);
+    (void)printf("正在获取运营商列表...\n");
+    (void)fflush(stdout);
     {
-        char dlist[1024] = "";
+        char dlist[1024]= {0};
         char items[16][128];
         int nitems = 0;
         if (auth_fetch_service_list(dlist, sizeof dlist))
@@ -392,48 +459,64 @@ static int wizard_collect(struct WizardOut* w, const char* def_probe)
                 if (len) /* 跳过空项（服务端偶发 "a@@b"/"@"），空名字不是合法运营商 */
                 {
                     size_t c = len < sizeof items[0] - 1 ? len : sizeof items[0] - 1;
-                    memcpy(items[nitems], p, c);
+                    (void)memcpy(items[nitems], p, c);
                     items[nitems][c] = 0;
                     nitems++;
                 }
-                if (!e) break;
+                if (!e)
+                {
+                    break;
+                }
                 p = e + 1;
             }
             for (int i = 0; i < nitems; i++)
-                printf("      %d. %s\n", i + 1, items[i]);
+            {
+                (void)printf("      %d. %s\n", i + 1, items[i]);
+            }
         }
         for (;;)
         {
             if (nitems)
-                printf("选择运营商 (1-%d, 回车=留空自动, 也可直接输入名称): ", nitems);
+            {
+                (void)printf("选择运营商 (1-%d, 回车=留空自动, 也可直接输入名称): ", nitems);
+            }
             else
-                printf("未能获取运营商列表（不在校园网或探测地址失效?可运行 cqie-auth doctor 定位）。"
-                       "直接输入名称，或回车=留空自动: ");
-            fflush(stdout);
-            char tmp[256] = "";
-            if (!read_line(tmp, sizeof tmp, 0)) goto eof;
-            if (!tmp[0]) break; /* 留空：登录时逐项尝试 */
+            {
+                (void)printf(
+                    "未能获取运营商列表（不在校园网或探测地址失效?可运行 cqie-auth doctor 定位）。"
+                    "直接输入名称，或回车=留空自动: ");
+            }
+            (void)fflush(stdout);
+            char tmp[256]= {0};
+            if (!read_line(tmp, sizeof tmp, 0))
+            {
+                goto eof;
+            }
+            if (!tmp[0])
+            {
+                break; /* 留空：登录时逐项尝试 */
+            }
             char* endp = NULL;
             long nsel = strtol(tmp, &endp, 10);
             if (nitems && endp && *endp == 0 && nsel >= 1 && nsel <= nitems)
             {
-                snprintf(w->svc, sizeof w->svc, "%s", items[nsel - 1]);
+                (void)snprintf(w->svc, sizeof w->svc, "%s", items[nsel - 1]);
                 break;
             }
             if (nitems && endp && *endp == 0)
             {
-                printf("序号超出范围（1-%d），请重新选择。\n", nitems);
+                (void)printf("序号超出范围（1-%d），请重新选择。\n", nitems);
                 continue;
             }
             /* 非数字：按手输名称处理（兼容列表外的自定义值/离线场景） */
-            snprintf(w->svc, sizeof w->svc, "%s", tmp);
+            (void)snprintf(w->svc, sizeof w->svc, "%s", tmp);
             break;
         }
     }
     return 1;
 
 eof:
-    printf("\n输入已结束，向导中止（未写入任何内容）。\n");
+    (void)printf("\n输入已结束，向导中止（未写入任何内容）。\n");
     return 0;
 }
 
@@ -441,12 +524,21 @@ eof:
 static const char* opt_val(int argc, char** argv, int* i, const char* name)
 {
     const char* a = argv[*i];
-    if (!a) return NULL; /* 防御：argv 以 NULL 结尾（正常循环 i<argc 不会触达） */
+    if (!a)
+    {
+        return NULL; /* 防御：argv 以 NULL 结尾（正常循环 i<argc 不会触达） */
+    }
     size_t n = strlen(name);
     if (!strncmp(a, name, n))
     {
-        if (a[n] == '=') return a + n + 1;
-        if (a[n] == 0 && *i + 1 < argc) return argv[++(*i)];
+        if (a[n] == '=')
+        {
+            return a + n + 1;
+        }
+        if (a[n] == 0 && *i + 1 < argc)
+        {
+            return argv[++(*i)];
+        }
     }
     return NULL;
 }
@@ -463,42 +555,78 @@ static int load_config_file(const char* path,
                             char* probe_buf, size_t pbsz)
 {
     FILE* fp = fopen(path, "r");
-    if (!fp) return 0;
+    if (!fp)
+    {
+        return 0;
+    }
 
 #ifndef _WIN32
     /* 权限检查：凭据文件应 600，过宽时提醒（Windows 无此模型，跳过） */
     struct stat st;
-    if (stat(path, &st) == 0 && (st.st_mode & 077) != 0)
-        fprintf(stderr, "[警告] 配置文件 %s 权限过宽，建议: chmod 600 %s\n",
-                path, path);
+    if (stat(path, &st) == 0 && (st.st_mode & (S_IRWXG | S_IRWXO)) != 0)
+    {
+        (void)fprintf(stderr, "[警告] 配置文件 %s 权限过宽，建议: chmod 600 %s\n", path, path);
+    }
 #endif
 
     char line[512];
     while (fgets(line, sizeof line, fp))
     {
         char* s = line;
-        while (*s == ' ' || *s == '\t') s++;
-        if (*s == '#' || *s == '\n' || *s == '\r' || *s == 0) continue;
+        while (*s == ' ' || *s == '\t')
+        {
+            s++;
+        }
+        if (*s == '#' || *s == '\n' || *s == '\r' || *s == 0)
+        {
+            continue;
+        }
         char* eq = strchr(s, '=');
-        if (!eq) continue;
+        if (!eq)
+        {
+            continue;
+        }
         *eq = 0;
         char* k = s;
         char* v = eq + 1;
-        while (*v == ' ' || *v == '\t') v++; /* 去值前导空白 */
+        while (*v == ' ' || *v == '\t')
+        {
+            v++; /* 去值前导空白 */
+        }
         size_t kl = strlen(k);
-        while (kl && (k[kl - 1] == ' ' || k[kl - 1] == '\t')) k[--kl] = 0;
+        while (kl && (k[kl - 1] == ' ' || k[kl - 1] == '\t'))
+        {
+            k[--kl] = 0;
+        }
         size_t vl = strlen(v);
-        while (vl && (v[vl - 1] == '\n' || v[vl - 1] == '\r' ||
-                      v[vl - 1] == ' ' || v[vl - 1] == '\t'))
+        while (vl &&
+               (v[vl - 1] == '\n' || v[vl - 1] == '\r' || v[vl - 1] == ' ' || v[vl - 1] == '\t'))
+        {
             v[--vl] = 0;
-        if (!strcmp(k, "user")) snprintf(user, usz, "%s", v);
-        else if (!strcmp(k, "password")) snprintf(pass, psz, "%s", v);
-        else if (!strcmp(k, "service")) snprintf(svc, ssz, "%s", v);
-        else if (!strcmp(k, "portal")) snprintf(portal_buf, plsz, "%s", v);
-        else if (!strcmp(k, "probe")) snprintf(probe_buf, pbsz, "%s", v);
+        }
+        if (!strcmp(k, "user"))
+        {
+            (void)snprintf(user, usz, "%s", v);
+        }
+        else if (!strcmp(k, "password"))
+        {
+            (void)snprintf(pass, psz, "%s", v);
+        }
+        else if (!strcmp(k, "service"))
+        {
+            (void)snprintf(svc, ssz, "%s", v);
+        }
+        else if (!strcmp(k, "portal"))
+        {
+            (void)snprintf(portal_buf, plsz, "%s", v);
+        }
+        else if (!strcmp(k, "probe"))
+        {
+            (void)snprintf(probe_buf, pbsz, "%s", v);
+        }
         /* 其余键忽略：允许用户加自定义备注行 */
     }
-    fclose(fp);
+    (void)fclose(fp);
     return 1;
 }
 
@@ -506,12 +634,23 @@ int main(int argc, char** argv)
 {
     compat_console_utf8(); /* Windows：控制台码页切 UTF-8，否则中文乱码 */
 
-    const char *cmd = NULL, *arg = NULL;
-    const char *log_file = NULL, *state_opt = NULL, *portal_opt = NULL, *iface = NULL;
+    const char* cmd = NULL;
+    const char* arg = NULL;
+    const char* log_file = NULL;
+    const char* state_opt = NULL;
+    const char* portal_opt = NULL;
+    const char* iface = NULL;
     const char *cfg_opt = NULL;
-    const char *cli_user = NULL, *cli_pass = NULL, *cli_svc = NULL;
+    const char* cli_user = NULL;
+    const char* cli_pass = NULL;
+    const char* cli_svc = NULL;
     int setup = 0;
-    int verbose = 0, quiet = 0, dry_run = 0, force = 0, plain = 0, no_syslog = 0;
+    int verbose = 0;
+    int quiet = 0;
+    int dry_run = 0;
+    int force = 0;
+    int plain = 0;
+    int no_syslog = 0;
 
     for (int i = 1; i < argc; i++)
     {
@@ -519,7 +658,10 @@ int main(int argc, char** argv)
         if (a[0] == '-' && a[1] == 'v')
         {
             /* -v / -vv / -vvv */
-            for (const char* p = a + 1; *p == 'v'; p++) verbose++;
+            for (const char* p = a + 1; *p == 'v'; p++)
+            {
+                verbose++;
+            }
             continue;
         }
         if (!strcmp(a, "--verbose"))
@@ -559,7 +701,7 @@ int main(int argc, char** argv)
         }
         if (!strcmp(a, "--version") || !strcmp(a, "-V"))
         {
-            printf("cqie-auth %s\n", CQIE_VERSION);
+            (void)printf("cqie-auth %s\n", CQIE_VERSION);
             return 0;
         }
         const char* v;
@@ -612,15 +754,21 @@ int main(int argc, char** argv)
         }
         if (a[0] == '-' && a[1])
         {
-            fprintf(stderr, "未知选项: %s\n\n", a);
+            (void)fprintf(stderr, "未知选项: %s\n\n", a);
             usage(stderr, argv[0]);
             return 2;
         }
-        if (!cmd) cmd = a;
-        else if (!arg) arg = a;
+        if (!cmd)
+        {
+            cmd = a;
+        }
+        else if (!arg)
+        {
+            arg = a;
+        }
         else
         {
-            fprintf(stderr, "多余的参数: %s\n\n", a);
+            (void)fprintf(stderr, "多余的参数: %s\n\n", a);
             usage(stderr, argv[0]);
             return 2;
         }
@@ -652,11 +800,23 @@ int main(int argc, char** argv)
         {
             const char* env = getenv("CQIE_DEBUG");
             dlevel = DEBUG_DEFAULT;
-            if (env && env[0]) dlevel = (int)strtol(env, NULL, 10);
+            if (env && env[0])
+            {
+                dlevel = (int)strtol(env, NULL, 10);
+            }
         }
-        if (dry_run && dlevel < 1) dlevel = 1; /* dry-run 自动带流程日志 */
-        if (dlevel < 0) dlevel = 0;
-        if (dlevel > 3) dlevel = 3;
+        if (dry_run && dlevel < 1)
+        {
+            dlevel = 1; /* dry-run 自动带流程日志 */
+        }
+        if (dlevel < 0)
+        {
+            dlevel = 0;
+        }
+        if (dlevel > 3)
+        {
+            dlevel = 3;
+        }
         level = LOG_LEVEL_WARN + dlevel;
     }
     log_init(level, log_file);
@@ -670,18 +830,23 @@ int main(int argc, char** argv)
             /* `cqie-auth --setup` 单独运行：直接作为"重新配置"命令，
              * 现有配置值作为预填默认，完成后提示运行 login。 */
             const char* p = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
-            if (!p) p = CONFIG_FILE;
+            if (!p)
+            {
+                p = CONFIG_FILE;
+            }
             struct WizardOut W;
-            memset(&W, 0, sizeof W);
-            snprintf(W.path, sizeof W.path, "%s", p);
-            load_config_file(p, W.user, sizeof W.user, W.pass, sizeof W.pass,
+            (void)memset(&W, 0, sizeof W);
+            (void)snprintf(W.path, sizeof W.path, "%s", p);
+            (void)load_config_file(p, W.user, sizeof W.user, W.pass, sizeof W.pass,
                              W.svc, sizeof W.svc, W.portal, sizeof W.portal,
                              W.probe, sizeof W.probe);
             for (;;)
             {
                 W.pass[0] = 0; /* 密码每轮必输 */
                 if (!wizard_collect(&W, PROBE_URL))
+                {
                     return 1; /* EOF/取消 */
+                }
                 auth_set_credentials(W.user, W.pass, W.svc);
                 auth_set_portal(W.portal[0] ? W.portal : NULL);
                 auth_set_probe(W.probe[0] ? W.probe : NULL);
@@ -689,35 +854,41 @@ int main(int argc, char** argv)
                 {
                     if (write_config_file(&W))
                     {
-                        printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
+                        (void)printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
                         return 0;
                     }
                     return 1;
                 }
-                char sd[600] = "";
-                compat_default_state(sd, sizeof sd);
-                state_init(state_opt ? state_opt : (sd[0] ? sd : NULL));
+                char sd[600]= {0};
+                (void)compat_default_state(sd, sizeof sd);
+                (void)state_init(state_opt ? state_opt : (sd[0] ? sd : NULL));
                 auth_set_dry_run(0);
                 if (iface)
-                    http_set_source_ip(iface); /* --interface 传了就生效；无效值忽略 */
+                {
+                    (void)http_set_source_ip(iface); /* --interface 传了就生效；无效值忽略 */
+                }
                 int r = cmd_login(1); /* force：强制重认证作为凭据实测 */
                 auth_session_unlock();
                 if (r == 0)
                 {
                     if (auth_last_service()[0])
-                        snprintf(W.svc, sizeof W.svc, "%s", auth_last_service());
+                    {
+                        (void)snprintf(W.svc, sizeof W.svc, "%s", auth_last_service());
+                    }
                     if (write_config_file(&W))
                     {
-                        printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
+                        (void)printf("配置完成，运行 `cqie-auth login` 认证上线。\n");
                         return 0;
                     }
                     return 1;
                 }
-                printf("凭据未写入（验证失败）。重新输入? (y/N): ");
-                fflush(stdout);
-                char ans[16] = "";
+                (void)printf("凭据未写入（验证失败）。重新输入? (y/N): ");
+                (void)fflush(stdout);
+                char ans[16]= {0};
                 if (!read_line(ans, sizeof ans, 0) || (ans[0] != 'y' && ans[0] != 'Y'))
+                {
                     return 1;
+                }
             }
         }
         usage(stderr, argv[0]);
@@ -732,15 +903,18 @@ int main(int argc, char** argv)
     /* 凭据配置文件：--config > $CQIE_CONFIG > 编译期默认（可选文件，缺席不报错） */
     const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");
     /* 默认配置路径：Windows=exe 同目录（便携布局）；POSIX=编译期宏 */
-    char def_cfg[600] = "";
-    compat_default_config(def_cfg, sizeof def_cfg);
-    if (!cfg_path) cfg_path = def_cfg[0] ? def_cfg : CONFIG_FILE;
-    char cfg_svc_raw[128] = ""; /* 配置文件里的原始 service 值（写回自愈的基准） */
-    char cfg_portal[256] = "";  /* 配置文件里的 portal=（可选，覆盖编译期默认） */
-    char cfg_probe[512] = "";   /* 配置文件里的 probe=（可选，覆盖编译期默认） */
-    char cfg_user[128] = "", cfg_pass[256] = ""; /* 向导重试预填用 */
+    char def_cfg[600]= {0};
+    (void)compat_default_config(def_cfg, sizeof def_cfg);
+    if (!cfg_path)
     {
-        char cfg_svc[128] = "";
+        cfg_path = def_cfg[0] ? def_cfg : CONFIG_FILE;
+    }
+    char cfg_svc_raw[128]= {0}; /* 配置文件里的原始 service 值（写回自愈的基准） */
+    char cfg_portal[256]= {0};  /* 配置文件里的 portal=（可选，覆盖编译期默认） */
+    char cfg_probe[512]= {0};   /* 配置文件里的 probe=（可选，覆盖编译期默认） */
+    char cfg_user[128]= {0}, cfg_pass[256] = ""; /* 向导重试预填用 */
+    {
+        char cfg_svc[128]= {0};
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
         /* --setup / reset 时允许文件不存在——前者就是要创建它，后者幂等删除 */
         if (load_config_file(cfg_path, cfg_user, sizeof cfg_user,
@@ -751,11 +925,11 @@ int main(int argc, char** argv)
         }
         else if (explicit_cfg && !setup && (!cmd || strcmp(cmd, "reset") != 0))
         {
-            fprintf(stderr, "配置文件不存在或不可读: %s\n\n", cfg_path);
+            (void)fprintf(stderr, "配置文件不存在或不可读: %s\n\n", cfg_path);
             usage(stderr, argv[0]);
             return 2;
         }
-        snprintf(cfg_svc_raw, sizeof cfg_svc_raw, "%s", cfg_svc);
+        (void)snprintf(cfg_svc_raw, sizeof cfg_svc_raw, "%s", cfg_svc);
         auth_set_credentials(cfg_user, cfg_pass, cfg_svc);
         /* 分层覆盖：配置文件 < 环境变量 < 命令行（setter 非空即覆盖，低→高依次调用） */
         auth_set_credentials(getenv("CQIE_USER"), getenv("CQIE_PASS"),
@@ -771,21 +945,21 @@ int main(int argc, char** argv)
         FILE* probe = fopen(cfg_path, "r");
         if (!probe)
         {
-            printf("配置文件不存在，无需删除: %s\n", cfg_path);
+            (void)printf("配置文件不存在，无需删除: %s\n", cfg_path);
             log_close();
             sock_quit();
             return 0;
         }
-        fclose(probe);
-        printf("将删除配置文件: %s（内含明文密码）\n", cfg_path);
+        (void)fclose(probe);
+        (void)printf("将删除配置文件: %s（内含明文密码）\n", cfg_path);
         if (!force)
         {
-            printf("确认删除? (y/N): ");
-            fflush(stdout);
-            char ans[16] = "";
+            (void)printf("确认删除? (y/N): ");
+            (void)fflush(stdout);
+            char ans[16]= {0};
             if (!read_line(ans, sizeof ans, 0) || (ans[0] != 'y' && ans[0] != 'Y'))
             {
-                printf("已取消，文件保留。\n");
+                (void)printf("已取消，文件保留。\n");
                 log_close();
                 sock_quit();
                 return 1;
@@ -793,12 +967,12 @@ int main(int argc, char** argv)
         }
         if (remove(cfg_path) != 0)
         {
-            fprintf(stderr, "删除失败: %s（%s）\n", cfg_path, strerror(errno));
+            (void)fprintf(stderr, "删除失败: %s（%s）\n", cfg_path, strerror(errno));
             log_close();
             sock_quit();
             return 1;
         }
-        printf("已删除 %s。下次 login 将重新进入配置向导。\n", cfg_path);
+        (void)printf("已删除 %s。下次 login 将重新进入配置向导。\n", cfg_path);
         log_close();
         sock_quit();
         return 0;
@@ -813,25 +987,25 @@ int main(int argc, char** argv)
                         compat_stdin_is_tty() &&
                         (!strcmp(cmd, "login") || !strcmp(cmd, "reauth"))));
     struct WizardOut W;
-    memset(&W, 0, sizeof W);
-    snprintf(W.path, sizeof W.path, "%s", cfg_path);
+    (void)memset(&W, 0, sizeof W);
+    (void)snprintf(W.path, sizeof W.path, "%s", cfg_path);
     /* 重试预填：配置文件已有值 */
-    snprintf(W.user, sizeof W.user, "%s", cfg_user);
-    snprintf(W.pass, sizeof W.pass, "%s", cfg_pass);
-    snprintf(W.svc, sizeof W.svc, "%s", cfg_svc_raw);
-    snprintf(W.portal, sizeof W.portal, "%s", cfg_portal);
-    snprintf(W.probe, sizeof W.probe, "%s", cfg_probe);
+    (void)snprintf(W.user, sizeof W.user, "%s", cfg_user);
+    (void)snprintf(W.pass, sizeof W.pass, "%s", cfg_pass);
+    (void)snprintf(W.svc, sizeof W.svc, "%s", cfg_svc_raw);
+    (void)snprintf(W.portal, sizeof W.portal, "%s", cfg_portal);
+    (void)snprintf(W.probe, sizeof W.probe, "%s", cfg_probe);
 
     LOG_DEBUG("日志级别=%d (0=正常 1=流程 2=HTTP细节 3=全部)%s", level - LOG_LEVEL_WARN,
               log_file ? "，同时写入日志文件" : "");
 
     /* 默认状态目录：Windows=exe 同目录 state\（便携布局）；
      * 优先级：--state-dir > $CQIE_STATE_DIR > exe目录默认/编译期宏 */
-    char def_state[600] = "";
-    compat_default_state(def_state, sizeof def_state);
+    char def_state[600]= {0};
+    (void)compat_default_state(def_state, sizeof def_state);
     {
         const char* env_sd = getenv("CQIE_STATE_DIR");
-        state_init(state_opt ? state_opt
+        (void)state_init(state_opt ? state_opt
                              : (env_sd ? NULL : (def_state[0] ? def_state : NULL)));
     }
     /* portal 优先级：--portal > 向导发现/配置文件 portal= > 编译期默认 */
@@ -842,7 +1016,7 @@ int main(int argc, char** argv)
     auth_set_plain(plain);
     if (iface && http_set_source_ip(iface) != 0)
     {
-        fprintf(stderr, "无效的源 IP: %s（--interface 需要 IPv4 地址，如 192.168.5.117）\n\n",
+        (void)fprintf(stderr, "无效的源 IP: %s（--interface 需要 IPv4 地址，如 192.168.5.117）\n\n",
                 iface);
         usage(stderr, argv[0]);
         return 2;
@@ -861,7 +1035,7 @@ int main(int argc, char** argv)
                 /* EOF/取消：凭据仍缺失则退出，否则按已加载值继续执行命令 */
                 if (auth_user()[0] == 0 || auth_password()[0] == 0)
                 {
-                    fprintf(stderr, "设置未完成，已退出。\n");
+                    (void)fprintf(stderr, "设置未完成，已退出。\n");
                     return 1;
                 }
                 need_wizard = 0;
@@ -876,23 +1050,45 @@ int main(int argc, char** argv)
                 if (W.skip_verify)
                 {
                     if (write_config_file(&W))
-                        printf("配置已保存: %s\n", W.path);
+                    {
+                        (void)printf("配置已保存: %s\n", W.path);
+                    }
                     need_wizard = 0;
                 }
                 else
+                {
                     pending_write = 1;
+                }
             }
         }
 
-        if (!strcmp(cmd, "login")) ret = cmd_login(force);
-        else if (!strcmp(cmd, "reauth")) ret = cmd_reauth(arg);
-        else if (!strcmp(cmd, "logout")) ret = cmd_logout(arg);
-        else if (!strcmp(cmd, "status")) ret = cmd_status();
-        else if (!strcmp(cmd, "userindex")) ret = cmd_userindex(arg);
-        else if (!strcmp(cmd, "doctor")) ret = cmd_doctor(cfg_path);
+        if (!strcmp(cmd, "login"))
+        {
+            ret = cmd_login(force);
+        }
+        else if (!strcmp(cmd, "reauth"))
+        {
+            ret = cmd_reauth(arg);
+        }
+        else if (!strcmp(cmd, "logout"))
+        {
+            ret = cmd_logout(arg);
+        }
+        else if (!strcmp(cmd, "status"))
+        {
+            ret = cmd_status();
+        }
+        else if (!strcmp(cmd, "userindex"))
+        {
+            ret = cmd_userindex(arg);
+        }
+        else if (!strcmp(cmd, "doctor"))
+        {
+            ret = cmd_doctor(cfg_path);
+        }
         else
         {
-            fprintf(stderr, "未知命令: %s\n\n", cmd);
+            (void)fprintf(stderr, "未知命令: %s\n\n", cmd);
             usage(stderr, argv[0]);
             ret = 2;
         }
@@ -908,9 +1104,13 @@ int main(int argc, char** argv)
                 (cfg_svc_raw[0] == 0 || strcmp(cfg_svc_raw, eff) != 0))
             {
                 if (config_update_key(cfg_path, "service", eff))
-                    printf("运营商已写回配置: %s\n", eff);
+                {
+                    (void)printf("运营商已写回配置: %s\n", eff);
+                }
                 else
-                    fprintf(stderr, "运营商写回配置失败（不影响本次认证）\n");
+                {
+                    (void)fprintf(stderr, "运营商写回配置失败（不影响本次认证）\n");
+                }
             }
         }
 
@@ -922,20 +1122,24 @@ int main(int argc, char** argv)
             {
                 /* 命令即验证：验证通过，写盘（service 用实际生效值校正） */
                 if (auth_last_service()[0])
-                    snprintf(W.svc, sizeof W.svc, "%s", auth_last_service());
+                {
+                    (void)snprintf(W.svc, sizeof W.svc, "%s", auth_last_service());
+                }
                 if (write_config_file(&W))
-                    printf("配置已保存: %s\n", W.path);
+                {
+                    (void)printf("配置已保存: %s\n", W.path);
+                }
                 pending_write = 0;
                 break;
             }
             /* 验证失败：凭据未写盘，询问重试（回向导，旧值预填） */
-            printf("凭据未保存（验证失败）。重新输入? (y/N): ");
-            fflush(stdout);
-            char ans[16] = "";
+            (void)printf("凭据未保存（验证失败）。重新输入? (y/N): ");
+            (void)fflush(stdout);
+            char ans[16]= {0};
             int rl = read_line(ans, sizeof ans, 0);
             if (!rl || (ans[0] != 'y' && ans[0] != 'Y'))
             {
-                fprintf(stderr, "未写入任何配置。\n");
+                (void)fprintf(stderr, "未写入任何配置。\n");
                 break;
             }
             need_wizard = 1;

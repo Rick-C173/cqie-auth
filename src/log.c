@@ -34,7 +34,10 @@ void log_set_syslog(int on) { g_syslog_on = on; }
 void log_status(const char* fmt, ...)
 {
     static int opened;
-    if (!g_syslog_on) return; /* --no-syslog：本次运行不留痕 */
+    if (!g_syslog_on)
+    {
+        return; /* --no-syslog：本次运行不留痕 */
+    }
     if (!opened)
     {
         /* LOG_PID 让 `logread` 里能按 pid 把同一次运行的多行归到一起。
@@ -45,7 +48,7 @@ void log_status(const char* fmt, ...)
     char msg[512];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(msg, sizeof msg, fmt, ap);
+    (void)vsnprintf(msg, sizeof msg, fmt, ap);
     va_end(ap);
     syslog(SYSLOG_LEVEL, "%s", msg);
 }
@@ -67,7 +70,10 @@ static const char* level_name(int level)
 
 long log_tick_ms(void)
 {
-    if (!g_started) return 0;
+    if (!g_started)
+    {
+        return 0;
+    }
     return (long)(compat_mono_ms() - g_start_ms);
 }
 
@@ -80,7 +86,9 @@ void log_init(int level, const char* file)
     {
         g_fp = fopen(file, "a"); /* 追加，便于 cron 累积 */
         if (!g_fp)
-            fprintf(stderr, "[log] 无法写入日志文件 %s，仅输出到终端\n", file);
+        {
+            (void)fprintf(stderr, "[log] 无法写入日志文件 %s，仅输出到终端\n", file);
+        }
     }
 }
 
@@ -89,7 +97,10 @@ int log_level(void) { return g_level; }
 /* 过滤规则集中在这里，log_emit 与 log_enabled 共用，避免两处各写一份走样 */
 int log_enabled(int level)
 {
-    if (g_level == LOG_LEVEL_QUIET) return level == LOG_LEVEL_ERROR;
+    if (g_level == LOG_LEVEL_QUIET)
+    {
+        return level == LOG_LEVEL_ERROR;
+    }
     return level <= g_level;
 }
 
@@ -97,7 +108,7 @@ void log_close(void)
 {
     if (g_fp)
     {
-        fclose(g_fp);
+        (void)fclose(g_fp);
         g_fp = NULL;
     }
 #if USE_SYSLOG
@@ -107,21 +118,27 @@ void log_close(void)
 
 void log_emit(int level, const char* fmt, ...)
 {
-    if (!log_enabled(level)) return;
+    if (!log_enabled(level))
+    {
+        return;
+    }
 
     /* 前缀：[时:分:秒.毫秒 +累计秒] 级别 */
-    int hh, mm, ss, msec;
+    int hh;
+    int mm;
+    int ss;
+    int msec;
     compat_localtime(&hh, &mm, &ss, &msec);
     long tick = log_tick_ms();
     char head[64];
-    snprintf(head, sizeof head, "[%02d:%02d:%02d.%03d +%ld.%03lds] %s ",
+    (void)snprintf(head, sizeof head, "[%02d:%02d:%02d.%03d +%ld.%03lds] %s ",
              hh, mm, ss, msec,
              tick / 1000, tick % 1000, level_name(level));
 
     char msg[2048];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(msg, sizeof msg, fmt, ap);
+    (void)vsnprintf(msg, sizeof msg, fmt, ap);
     va_end(ap);
 
     /* 记下第一条 ERROR 当根因，供 syslog 那条状态行说明失败原因。
@@ -129,17 +146,20 @@ void log_emit(int level, const char* fmt, ...)
     if (level == LOG_LEVEL_ERROR && !g_first_err[0])
     {
         size_t n = strlen(msg);
-        if (n >= sizeof g_first_err) n = sizeof g_first_err - 1;
-        memcpy(g_first_err, msg, n);
+        if (n >= sizeof g_first_err)
+        {
+            n = sizeof g_first_err - 1;
+        }
+        (void)memcpy(g_first_err, msg, n);
         g_first_err[n] = 0;
     }
 
-    fprintf(stderr, "%s%s\n", head, msg);
+    (void)fprintf(stderr, "%s%s\n", head, msg);
     if (g_fp)
     {
-        fputs(head, g_fp);
-        fputs(msg, g_fp);
-        fputc('\n', g_fp);
-        fflush(g_fp);
+        (void)fputs(head, g_fp);
+        (void)fputs(msg, g_fp);
+        (void)fputc('\n', g_fp);
+        (void)fflush(g_fp);
     }
 }

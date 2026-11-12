@@ -21,10 +21,17 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
 {
     char plain[512];
     int len = snprintf(plain, sizeof plain, "%s>%s", pwd, mac);
-    if (len <= 0 || (size_t)len >= sizeof plain) return 0;
+    if (len <= 0 || (size_t)len >= sizeof plain)
+    {
+        return 0;
+    }
 
-    bn e, n;
-    if (!bn_from_hex(&e, e_hex) || !bn_from_hex(&n, n_hex)) return 0;
+    bn e;
+    bn n;
+    if (!bn_from_hex(&e, e_hex) || !bn_from_hex(&n, n_hex))
+    {
+        return 0;
+    }
 
 #if RSA_PAD_PER_BLOCK
     /* 每块补足到模数的十六进制宽度 */
@@ -36,14 +43,19 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
     for (int off = 0; off < len; off += RSA_CHUNK)
     {
         int cnt = len - off;
-        if (cnt > RSA_CHUNK) cnt = RSA_CHUNK;
+        if (cnt > RSA_CHUNK)
+        {
+            cnt = RSA_CHUNK;
+        }
         /* 第 off 块 = 明文末尾起第 off..off+cnt-1 字节（off=0 即最后一块） */
         char be[RSA_CHUNK];
         for (int i = 0; i < cnt; i++)
+        {
             be[cnt - 1 - i] = plain[len - 1 - off - i];
+        }
 
         bn m;
-        memset(&m, 0, sizeof m);
+        (void)memset(&m, 0, sizeof m);
         for (int i = 0; i < cnt; i++)
         {
             /* 大端：be[0] 为最高字节 */
@@ -63,13 +75,16 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
 #else
         size_t blkpad = 0;
 #endif
-        if (used + blkpad + hl + 1 >= outsz) return 0;
+        if (used + blkpad + hl + 1 >= outsz)
+        {
+            return 0;
+        }
         if (blkpad)
         {
-            memset(out + used, '0', blkpad);
+            (void)memset(out + used, '0', blkpad);
             used += blkpad;
         }
-        memcpy(out + used, hex, hl + 1);
+        (void)memcpy(out + used, hex, hl + 1);
         used += hl;
     }
 
@@ -78,9 +93,12 @@ int ruijie_rsa_encrypt(const char* pwd, const char* mac,
     size_t pad = (4 - used % 4) % 4;
     if (pad)
     {
-        if (used + pad + 1 > outsz) return 0;
-        memmove(out + pad, out, used + 1);
-        memset(out, '0', pad);
+        if (used + pad + 1 > outsz)
+        {
+            return 0;
+        }
+        (void)memmove(out + pad, out, used + 1);
+        (void)memset(out, '0', pad);
     }
 #endif
     return 1;

@@ -20,19 +20,25 @@ int sock_init(void)
     if (!done)
     {
         WSADATA wsa;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+        {
+            return 0;
+        }
         done = 1;
     }
     return 1;
 }
 
-void sock_quit(void) { WSACleanup(); }
+void sock_quit(void) { (void)WSACleanup(); }
 
 int sock_take_error(sock_t fd)
 {
     int err = -1;
-    int el = sizeof err;
-    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char*)&err, &el) != 0) return -1;
+    int err_len = sizeof err;
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char*)&err, &err_len) != 0)
+    {
+        return -1;
+    }
     return err;
 }
 
@@ -70,12 +76,21 @@ int compat_exe_dir(char* out, size_t n)
 {
     wchar_t wpath[600];
     DWORD len = GetModuleFileNameW(NULL, wpath, (DWORD)(sizeof wpath / sizeof *wpath));
-    if (len == 0 || len >= sizeof wpath / sizeof *wpath) return 0;
+    if (len == 0 || len >= sizeof wpath / sizeof *wpath)
+    {
+        return 0;
+    }
     /* 程序内字符串统一 UTF-8；W 版 API + 显式转换保证中文/空格路径安全 */
     int need = WideCharToMultiByte(CP_UTF8, 0, wpath, -1, out, (int)n, NULL, NULL);
-    if (need <= 0 || (size_t)need > n) return 0;
+    if (need <= 0 || (size_t)need > n)
+    {
+        return 0;
+    }
     char* slash = strrchr(out, '\\');
-    if (!slash) return 0;
+    if (!slash)
+    {
+        return 0;
+    }
     *slash = 0;
     return out[0] ? 1 : 0;
 }
@@ -83,7 +98,10 @@ int compat_exe_dir(char* out, size_t n)
 int compat_default_config(char* out, size_t n)
 {
     char dir[600];
-    if (!compat_exe_dir(dir, sizeof dir)) return 0;
+    if (!compat_exe_dir(dir, sizeof dir))
+    {
+        return 0;
+    }
     int r = snprintf(out, n, "%s\\cqie-auth.conf", dir);
     return r > 0 && (size_t)r < n;
 }
@@ -91,7 +109,10 @@ int compat_default_config(char* out, size_t n)
 int compat_default_state(char* out, size_t n)
 {
     char dir[600];
-    if (!compat_exe_dir(dir, sizeof dir)) return 0;
+    if (!compat_exe_dir(dir, sizeof dir))
+    {
+        return 0;
+    }
     int r = snprintf(out, n, "%s\\state", dir);
     return r > 0 && (size_t)r < n;
 }
@@ -102,9 +123,18 @@ void compat_echo(int on)
 {
     HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
-    if (!GetConsoleMode(h, &mode)) return; /* 输入被重定向时无控制台，静默 */
-    if (on) mode |= ENABLE_ECHO_INPUT;
-    else    mode &= ~ENABLE_ECHO_INPUT;
+    if (!GetConsoleMode(h, &mode))
+    {
+        return; /* 输入被重定向时无控制台，静默 */
+    }
+    if (on)
+    {
+        mode |= ENABLE_ECHO_INPUT;
+    }
+    else
+    {
+        mode &= ~ENABLE_ECHO_INPUT;
+    }
     SetConsoleMode(h, mode);
 }
 
@@ -113,13 +143,19 @@ void* compat_lock_file(const char* path)
     /* 共享模式 0 = 独占：第二个实例打开直接失败；句柄随进程退出自动释放 */
     HANDLE h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return NULL;
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        return NULL;
+    }
     return h;
 }
 
 void compat_unlock_file(void* h)
 {
-    if (h) CloseHandle((HANDLE)h);
+    if (h)
+    {
+        CloseHandle((HANDLE)h);
+    }
 }
 
 #else /* POSIX */
@@ -138,19 +174,31 @@ int compat_stdin_is_tty(void) { return isatty(0); }
 void compat_echo(int on)
 {
     struct termios t;
-    if (tcgetattr(0, &t) != 0) return; /* 输入被重定向时非终端，静默 */
-    if (on) t.c_lflag |= ECHO;
-    else    t.c_lflag &= ~(tcflag_t)ECHO;
-    tcsetattr(0, TCSANOW, &t);
+    if (tcgetattr(0, &t) != 0)
+    {
+        return; /* 输入被重定向时非终端，静默 */
+    }
+    if (on)
+    {
+        t.c_lflag |= ECHO;
+    }
+    else
+    {
+        t.c_lflag &= ~(tcflag_t)ECHO;
+    }
+    (void)tcsetattr(0, TCSANOW, &t);
 }
 
 void* compat_lock_file(const char* path)
 {
-    int fd = open(path, O_RDWR | O_CREAT, 0600);
-    if (fd < 0) return NULL;
+    int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fd < 0)
+    {
+        return NULL;
+    }
     if (flock(fd, LOCK_EX | LOCK_NB) != 0) /* 非阻塞：已被持有立即失败 */
     {
-        close(fd);
+        (void)close(fd);
         return NULL;
     }
     return (void*)(intptr_t)fd;
@@ -158,37 +206,46 @@ void* compat_lock_file(const char* path)
 
 void compat_unlock_file(void* h)
 {
-    if (h) close((int)(intptr_t)h);
+    if (h)
+    {
+        (void)close((int)(intptr_t)h);
+    }
 }
 
 int sock_take_error(sock_t fd)
 {
     int err = -1;
-    socklen_t el = sizeof err;
-    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) != 0) return -1;
+    socklen_t err_len = sizeof err;
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &err_len) != 0)
+    {
+        return -1;
+    }
     return err;
 }
 
 int sock_nonblock(sock_t fd, int on)
 {
-    int fl = fcntl(fd, F_GETFL, 0);
-    if (fl < 0) return -1;
-    return fcntl(fd, F_SETFL, on ? (fl | O_NONBLOCK) : (fl & ~O_NONBLOCK)) < 0 ? -1 : 0;
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0)
+    {
+        return -1;
+    }
+    return fcntl(fd, F_SETFL, on ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK)) < 0 ? -1 : 0;
 }
 
 long long compat_mono_ms(void)
 {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 void compat_localtime(int* hour, int* min, int* sec, int* msec)
 {
     struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
+    (void)clock_gettime(CLOCK_REALTIME, &ts);
     struct tm tm;
-    localtime_r(&ts.tv_sec, &tm);
+    (void)localtime_r(&ts.tv_sec, &tm);
     *hour = tm.tm_hour;
     *min = tm.tm_min;
     *sec = tm.tm_sec;
@@ -198,33 +255,45 @@ void compat_localtime(int* hour, int* min, int* sec, int* msec)
 void compat_msleep(int ms)
 {
     struct timespec ts = {ms / 1000, (long)(ms % 1000) * 1000000L};
-    nanosleep(&ts, NULL);
+    (void)nanosleep(&ts, NULL);
 }
 
-int compat_mkdir(const char* path) { return mkdir(path, 0700); }
+int compat_mkdir(const char* path) { return mkdir(path, S_IRWXU); }
 
 void compat_console_utf8(void) { /* POSIX 终端本就是 UTF-8，无需处理 */ }
 
 int compat_exe_dir(char* out, size_t n)
 {
     ssize_t len = readlink("/proc/self/exe", out, n - 1);
-    if (len <= 0) return 0;
+    if (len <= 0)
+    {
+        return 0;
+    }
     out[len] = 0;
     char* slash = strrchr(out, '/');
-    if (!slash) return 0;
+    if (!slash)
+    {
+        return 0;
+    }
     *slash = 0;
     return out[0] ? 1 : 0;
 }
 
 int compat_default_config(char* out, size_t n)
 {
-    if (n) out[0] = 0; /* 返回 0 = 空，调用方回退编译期宏/环境变量链 */
+    if (n)
+    {
+        out[0] = 0; /* 返回 0 = 空，调用方回退编译期宏/环境变量链 */
+    }
     return 0;
 }
 
 int compat_default_state(char* out, size_t n)
 {
-    if (n) out[0] = 0; /* 返回 0 = 空，state_init 内部走 环境变量→宏 链 */
+    if (n)
+    {
+        out[0] = 0; /* 返回 0 = 空，state_init 内部走 环境变量→宏 链 */
+    }
     return 0;
 }
 

@@ -24,10 +24,13 @@ static char g_dir[512];
 static int mkdir_p(const char* path)
 {
     char tmp[512];
-    snprintf(tmp, sizeof tmp, "%s", path);
+    (void)snprintf(tmp, sizeof tmp, "%s", path);
     for (char* p = tmp + 1; *p; p++)
     {
-        if (*p != '/' && *p != '\\') continue;
+        if (*p != '/' && *p != '\\')
+        {
+            continue;
+        }
         *p = 0;
         /* Windows 盘根（"C:"）不是可创建目录：_mkdir 报错属正常，stat 也
          * 未必成功（CRT 把 "C:" 当作该盘当前目录），直接放行 */
@@ -35,14 +38,20 @@ static int mkdir_p(const char* path)
         if (!drive_root && compat_mkdir(tmp) != 0)
         {
             struct stat st;
-            if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+            if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode))
+            {
+                return 0;
+            }
         }
         *p = '/';
     }
     if (compat_mkdir(tmp) != 0)
     {
         struct stat st;
-        if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) return 0;
+        if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode))
+        {
+            return 0;
+        }
     }
     return 1;
 }
@@ -50,18 +59,24 @@ static int mkdir_p(const char* path)
 const char* state_init(const char* cli_dir)
 {
     const char* dir = cli_dir;
-    if (!dir || !dir[0]) dir = getenv("CQIE_STATE_DIR");
-    if (!dir || !dir[0]) dir = STATE_DIR;
+    if (!dir || !dir[0])
+    {
+        dir = getenv("CQIE_STATE_DIR");
+    }
+    if (!dir || !dir[0])
+    {
+        dir = STATE_DIR;
+    }
 
     if (mkdir_p(dir))
     {
-        snprintf(g_dir, sizeof g_dir, "%s", dir);
+        (void)snprintf(g_dir, sizeof g_dir, "%s", dir);
     }
     else
     {
         LOG_ERROR("状态目录 %s 不可用，回退到当前目录（状态文件将写在工作目录，"
                   "建议用 --state-dir 指定可写目录）", dir);
-        snprintf(g_dir, sizeof g_dir, ".");
+        (void)snprintf(g_dir, sizeof g_dir, ".");
     }
     LOG_DEBUG("状态目录: %s", g_dir);
     return g_dir;
@@ -69,7 +84,10 @@ const char* state_init(const char* cli_dir)
 
 const char* state_dir(void)
 {
-    if (!g_dir[0]) state_init(NULL);
+    if (!g_dir[0])
+    {
+        (void)state_init(NULL);
+    }
     return g_dir;
 }
 
@@ -81,9 +99,13 @@ int state_path(char* buf, size_t n, const char* name)
 
 int state_write(const char* name, const char* content)
 {
-    char path[600], tmp[640];
-    if (!state_path(path, sizeof path, name)) return 0;
-    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    char path[600];
+    char tmp[640];
+    if (!state_path(path, sizeof path, name))
+    {
+        return 0;
+    }
+    (void)snprintf(tmp, sizeof tmp, "%s.tmp", path);
 
     FILE* f = fopen(tmp, "wb"); /* 二进制写：令牌文件跨平台统一 LF，避免 Windows 变 CRLF */
     if (!f)
@@ -91,9 +113,9 @@ int state_write(const char* name, const char* content)
         LOG_WARN("无法写入 %s: %s", tmp, strerror(errno));
         return 0;
     }
-    fprintf(f, "%s\n", content);
-    fclose(f);
-    chmod(tmp, 0600); /* userIndex 是会话令牌，别让同机其他用户读（Windows 上仅只读位） */
+    (void)fprintf(f, "%s\n", content);
+    (void)fclose(f);
+    (void)chmod(tmp, S_IRUSR | S_IWUSR); /* userIndex 是会话令牌，别让同机其他用户读（Windows 上仅只读位） */
 #ifdef _WIN32
     /* MSVCRT 的 rename 目标已存在时失败，用 MoveFileEx 原子替换 */
     if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING))
@@ -102,7 +124,7 @@ int state_write(const char* name, const char* content)
 #endif
     {
         LOG_WARN("重命名 %s -> %s 失败: %s", tmp, path, strerror(errno));
-        remove(tmp);
+        (void)remove(tmp);
         return 0;
     }
     LOG_DEBUG("已写入 %s (%zu 字节)", path, strlen(content));
@@ -112,13 +134,22 @@ int state_write(const char* name, const char* content)
 int state_read(const char* name, char* out, size_t n)
 {
     char path[600];
-    if (!state_path(path, sizeof path, name)) return 0;
+    if (!state_path(path, sizeof path, name))
+    {
+        return 0;
+    }
     return file_read_trim(path, out, n) && out[0];
 }
 
 void state_remove(const char* name)
 {
     char path[600];
-    if (!state_path(path, sizeof path, name)) return;
-    if (remove(path) == 0) LOG_DEBUG("已删除 %s", path);
+    if (!state_path(path, sizeof path, name))
+    {
+        return;
+    }
+    if (remove(path) == 0)
+    {
+        LOG_DEBUG("已删除 %s", path);
+    }
 }
