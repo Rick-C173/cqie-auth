@@ -184,7 +184,7 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
             }
             else
             {
-                out[n] = (char)((hi << 4) | v);
+                out[n] = (char)((hi << 4) | v); /* cppcheck-suppress misra-c2012-10.1 字节合成强转，见 MISRA.md 10.8 族 */
                 n++;
                 hi = -1;
             }
@@ -197,7 +197,7 @@ size_t hex_decode(const char* s, char* out, size_t outsz)
     return n;
 }
 
-void hex_print_decode(const char* s)
+void hex_print_decode(const char* s) /* cppcheck-suppress misra-c2012-8.7 测试通道 API（tests/harness.c 使用） */
 {
     /* 实际输入是 userIndex（hex，约 54 字符 -> 27 字节），2048 已足够。
      * 原来是 8192 的 static（.bss），白白占着镜像。 */

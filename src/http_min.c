@@ -170,7 +170,7 @@ int http_set_source_ip(const char* ip)
 
 
 #ifndef _WIN32
-#define DNS_TIMEOUT_MS 1500 /* 单次域名解析上限；超时视为解析失败 */
+#define DNS_TIMEOUT_MS 1500 /* 单次域名解析上限；超时视为解析失败 */ /* cppcheck-suppress misra-c2012-2.5 已在使用（http_resolve_host_limited）；检查器跨配置误报 */
 
 /*
  * 带超时的域名解析（POSIX）：getaddrinfo 是同步实现且不可中断，
@@ -268,7 +268,7 @@ int http_resolve_host_limited(const char* host, long timeout_ms,
  * getaddrinfo 阻塞不可中断，timeout_ms 不生效（socket 层自带超时兜底）；
  * 纯 IP 输入仍走快速路径，不发解析请求。
  */
-int http_resolve_host_limited(const char* host, long timeout_ms,
+int http_resolve_host_limited(const char* host, long timeout_ms, /* cppcheck-suppress misra-c2012-8.7 测试通道 API（tests/harness.c 使用） */
                                 char* out, size_t outsz)
 {
     (void)timeout_ms;

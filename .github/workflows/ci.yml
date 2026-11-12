@@ -14,11 +14,14 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc xxd
+          sudo apt-get install -y bc xxd cppcheck
           python3 -m pip install --user cryptography
 
       - name: 构建
         run: make
+
+      - name: MISRA C:2012 门禁（双配置扫描，零未豁免违规）
+        run: make misra
 
       - name: 全量测试
         run: |

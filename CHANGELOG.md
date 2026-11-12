@@ -3,6 +3,32 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.9.5] - 2026-11-12
+
+### Added
+- **MISRA C:2012 全量合规**（cppcheck 2.19 + misra.py 插件）：基线 1777 条违规 /
+  48 条规则，修复约 1160 条后达到"零未豁免违规"的合规定义；新增 `make misra`
+  门禁（POSIX/_WIN32 双配置扫描）并纳入 CI，偏离记录成文 `docs/MISRA.md`
+- 修复大类：15.6 语句体复合化（327）、17.7 忽略返回值 `(void)` 化（282）、
+  10.x 本质类型整改（~130）、12.3 声明拆分、22.x 资源/errno 纪律
+  （strtol 补 `errno = 0` + 范围判定）、13.x/14.2/15.7/17.8 控制流清理、
+  8.x 作用域收敛（`compat_exe_dir`/`http_source_ip` static 化、死代码删除）、
+  7.x 字面量卫生（`l→L`、权限改 `S_*` 符号、字符串初始化 `{0}`）
+- 偏离规则成文并经门禁放行：`goto done` 族（15.1/15.2/15.4/15.5）、`if (ptr)`
+  （14.4）、指针算术（18.4）、malloc/stdio/getenv/time/signal 等 libc 能力
+  （21.3/21.6/21.8/21.10/21.5）、特性测试宏（21.1）、系统宏混算（行内豁免）
+- `docs/CODING.md` 第 8 节由"选择性采纳"升级为"全量合规"政策说明
+
+### Changed
+- 错误处理增强：strtol 解析全部改为 `errno = 0` + `errno == 0` + 数值范围校验
+  （端口/Content-Length/调试级别/候选序号），异常输入行为由测试固化
+- `compat_lock_file` POSIX 实现改为"指向静态 fd 单元的不透明句柄"，
+  消除 `intptr_t` 与 `void*` 之间的算术往返（MISRA 11.6）
+- 会话锁/探测状态等仅单函数使用的对象收敛到块作用域（MISRA 8.9）；
+  `service_avoided` 词表同上
+- `portal_host_port`/`parse_status` 等 strtol 调用点增加上限校验
+  （端口 1-65535、HTTP 状态码 100-599）
+
 ## [1.9.4] - 2026-11-12
 
 ### Added

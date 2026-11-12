@@ -11,10 +11,10 @@
 #ifdef _WIN32
 
   #ifndef WIN32_LEAN_AND_MEAN
-  #define WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN /* cppcheck-suppress misra-c2012-2.5 平台 shim 宏，见 MISRA.md */
   #endif
   #ifndef _WIN32_WINNT
-  #define _WIN32_WINNT 0x0601 /* GetTickCount64 / WSAPoll / inet_ntop 需要 Vista+ */
+  #define _WIN32_WINNT 0x0601 /* GetTickCount64 / WSAPoll / inet_ntop 需要 Vista+ */ /* cppcheck-suppress misra-c2012-2.5 平台 shim 宏，见 MISRA.md */
   #endif
   #include <winsock2.h>
   #include <ws2tcpip.h>
@@ -24,8 +24,8 @@
   #define SOCK_INVALID   INVALID_SOCKET
   #define sock_close     closesocket
   #define sock_errno     WSAGetLastError()
-  #define poll           WSAPoll
-  #define strncasecmp    _strnicmp
+  #define poll           WSAPoll /* cppcheck-suppress misra-c2012-2.5 平台 shim 宏，见 MISRA.md */
+  #define strncasecmp    _strnicmp /* cppcheck-suppress misra-c2012-2.5 平台 shim 宏，见 MISRA.md */
 
   /* 非阻塞 connect 未完成时 Winsock 报 WSAEWOULDBLOCK（POSIX 是 EINPROGRESS）；
    * 非阻塞 send/recv 暂无数据时两者都报 WSAEWOULDBLOCK / EWOULDBLOCK */
@@ -53,8 +53,8 @@
   #define SOCK_INVALID   (-1)
   #define sock_close     close
   #define sock_errno     errno
-  #define sock_init()    1
-  #define sock_quit()    ((void)0)
+  #define sock_init()    1 /* cppcheck-suppress misra-c2012-2.5 平台 shim 宏，见 MISRA.md */
+  #define sock_quit()    ((void)0) /* cppcheck-suppress misra-c2012-2.5 平台 shim 宏，见 MISRA.md */
 
   #define SOCK_ERR_INPROGRESS EINPROGRESS
   #define SOCK_ERR_WOULDBLOCK EWOULDBLOCK

@@ -42,7 +42,7 @@ void log_status(const char* fmt, ...)
     {
         /* LOG_PID 让 `logread` 里能按 pid 把同一次运行的多行归到一起。
          * 刻意不加 LOG_CONS：没有 /dev/log 时不要往控制台喷东西。 */
-        openlog(SYSLOG_IDENT, LOG_PID | LOG_NDELAY, LOG_USER);
+        openlog(SYSLOG_IDENT, LOG_PID | LOG_NDELAY, LOG_USER); /* cppcheck-suppress misra-c2012-10.1 syslog 便利宏为有符号位标志（glibc 定义） */ /* cppcheck-suppress misra-c2012-10.1 syslog 便利宏为有符号位标志（glibc 定义） */
         opened = 1;
     }
     char msg[512];

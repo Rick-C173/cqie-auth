@@ -65,7 +65,7 @@ LUCI_VERSION := 1.9.2
 LUCI_RELEASE := 1
 LUCI_IPK     := dist/$(LUCI_NAME)_$(LUCI_VERSION)-$(LUCI_RELEASE)_all.ipk
 
-.PHONY: all clean strip check openwrt openwrt-size linux windows luci FORCE
+.PHONY: all clean strip check misra openwrt openwrt-size linux windows luci FORCE
 
 all: $(BIN)
 
@@ -82,6 +82,10 @@ strip: all
 # 开发机上的自检：RSA 与原脚本逐字节比对 + 字符串解析比对 + 模拟 AC 端到端
 check: all
 	bash tests/check.sh
+
+# MISRA C:2012 门禁：双配置 cppcheck+misra 插件扫描，零未豁免违规（偏差记录 docs/MISRA.md）
+misra:
+	bash scripts/misra_gate.sh
 
 # 打包 luci-app-cqie-auth ipk：root/ -> data、htdocs/ -> data/www（对齐 luci.mk 安装映射）
 luci: $(LUCI_IPK)

@@ -38,7 +38,7 @@ static int mkdir_p(const char* path)
         if (!drive_root && compat_mkdir(tmp) != 0)
         {
             struct stat st;
-            if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode))
+            if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) /* cppcheck-suppress misra-c2012-10.4 glibc S_ISDIR 宏内部混算 */ /* cppcheck-suppress misra-c2012-10.4 glibc S_ISDIR 宏内部混算 */
             {
                 return 0;
             }
@@ -48,7 +48,7 @@ static int mkdir_p(const char* path)
     if (compat_mkdir(tmp) != 0)
     {
         struct stat st;
-        if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode))
+        if (stat(tmp, &st) != 0 || !S_ISDIR(st.st_mode)) /* cppcheck-suppress misra-c2012-10.4 glibc S_ISDIR 宏内部混算 */
         {
             return 0;
         }

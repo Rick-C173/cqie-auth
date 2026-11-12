@@ -572,7 +572,7 @@ static int load_config_file(const char* path,
 #ifndef _WIN32
     /* 权限检查：凭据文件应 600，过宽时提醒（Windows 无此模型，跳过） */
     struct stat st;
-    if (stat(path, &st) == 0 && (st.st_mode & (S_IRWXG | S_IRWXO)) != 0)
+    if (stat(path, &st) == 0 && (st.st_mode & (S_IRWXG | S_IRWXO)) != 0) /* cppcheck-suppress misra-c2012-10.1 mode_t 系统宏混算 */ /* cppcheck-suppress misra-c2012-10.4 glibc mode_t/st_mode 位标志 */ /* cppcheck-suppress misra-c2012-10.1 mode_t 系统宏混算 */ /* cppcheck-suppress misra-c2012-10.4 glibc mode_t/st_mode 位标志 */
     {
         (void)fprintf(stderr, "[警告] 配置文件 %s 权限过宽，建议: chmod 600 %s\n", path, path);
     }

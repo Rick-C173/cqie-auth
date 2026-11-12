@@ -6,8 +6,6 @@
 //
 #define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（getaddrinfo / inet_ntop，-std=c99/c17 ISO 模式下需显式开启） */
 #include <errno.h>
-#include <errno.h>
-#include <errno.h>
 #include "auth.h"
 #include "config.h"
 #include "bn.h"
