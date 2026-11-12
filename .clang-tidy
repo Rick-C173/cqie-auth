@@ -50,6 +50,7 @@ Checks: >
   readability-static-definition-in-anonymous-namespace,
   clang-analyzer-core.*,
   clang-analyzer-security.*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   clang-analyzer-unix.*,
   clang-analyzer-valist.*
 

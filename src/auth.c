@@ -4,7 +4,7 @@
 // 登录对应原 main.sh，注销对应原 cqie-exit.sh，reauth 为新增的"先注销再认证"。
 // 约定：结果（userIndex / 注销响应 / 已在线）走 stdout，诊断信息走 stderr（见 log.h）。
 //
-#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（getaddrinfo / inet_ntop，-std=c99 下需显式开启） */
+#define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（getaddrinfo / inet_ntop，-std=c99/c17 ISO 模式下需显式开启） */
 #include "auth.h"
 #include "config.h"
 #include "bn.h"

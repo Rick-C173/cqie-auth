@@ -18,6 +18,14 @@
 - `urlencode` 重写为**上界可推导**分配（`malloc(3n+1)` 单遍写入）：原"两遍遍历 +
   精确分配"逻辑正确，但分析器无法证明两次判定一致而报 `security.ArrayBound`；
   上界分配让安全性可直接推导（多占用的临时内存 ≤2n+1 字节，调用后即 free）
+- **编译标准 C99 → C17**（Makefile 主构建/OpenWrt 交叉/Windows 交叉与 check.sh
+  全部测试编译统一 `-std=c17`）：C17 为 C11 缺陷修复版、无新语言特性，现有代码
+  零迁移成本；显式声明标准使 gcc15（默认 gnu23）等新工具链行为可控。
+  OpenWrt 包构建走 buildroot 默认（gcc13 gnu17），不显式声明
+- `.clang-tidy` 禁用 `insecureAPI.DeprecatedOrUnsafeBufferHandling` 子检查：
+  C11+ 模式下它对 `snprintf/memcpy/memset` 等（本身即带界安全用法）建议替换为
+  C11 Annex K 的 `*_s` 函数，而 glibc/musl 均不实现 `*_s`（OpenWrt 无法链接），
+  全部 127 条均为不可执行的噪音建议；其余 security 检查保留
 
 ## [1.9.3] - 2026-11-12
 

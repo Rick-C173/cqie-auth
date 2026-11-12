@@ -11,7 +11,7 @@ STRIP   ?= strip
 #   -Wmissing-prototypes 公开函数必须有原型（static 不受影响）
 #   -Wformat=2          格式串与实参强校验 + 非常量格式串告警
 CFLAGS  += -O2 -Wall -Wextra -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
-           -Wformat=2 -std=c99 -ffunction-sections -fdata-sections
+           -Wformat=2 -std=c17 -ffunction-sections -fdata-sections
 LDFLAGS += -Wl,--gc-sections
 
 # 所有构建产物统一落在根目录的 dist/ 下（对象文件/二进制/ipk），
@@ -44,7 +44,7 @@ OWRT_CFLAGS := -Iinclude -I$(OWRT_STG)/usr/include \
                -Os -flto -ffunction-sections -fdata-sections \
                -fno-asynchronous-unwind-tables -fno-unwind-tables \
                -fno-ident -fmerge-all-constants \
-               -Wall -Wextra -std=c99 \
+               -Wall -Wextra -std=c17 \
                -DSTATE_DIR='"/etc/cqie-auth"' \
                -DCQIE_MINIMAL_HELP=1
 
@@ -136,7 +136,7 @@ linux:
 WIN_CC    := x86_64-w64-mingw32-gcc
 WIN_CFLAGS := -Iinclude -Os -flto -ffunction-sections -fdata-sections \
               -fno-asynchronous-unwind-tables -fno-ident \
-              -Wall -Wextra -std=c99 \
+              -Wall -Wextra -std=c17 \
               -D_WIN32_WINNT=0x0601 -D__USE_MINGW_ANSI_STDIO=1 \
               -DUSE_SYSLOG=0 -DSTATE_DIR='"."' -DCONFIG_FILE='"cqie-auth.conf"'
 WIN_LDFLAGS := -static -flto -Wl,--gc-sections -s

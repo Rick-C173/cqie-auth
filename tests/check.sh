@@ -56,7 +56,7 @@ WEOF
 fi
 
 echo "== 0. 编译自检工具 =="
-if ! ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -o "$TMP/harness" \
+if ! ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -o "$TMP/harness" \
         "$ROOT/tests/harness.c" "$ROOT/src/bn.c" "$ROOT/src/rsa.c" "$ROOT/src/compat.c" "$ROOT/src/util.c" \
         "$ROOT/src/log.c" "$ROOT/src/http_min.c" 2>"$TMP/h_cc.err"; then
     echo "编译 harness 失败"; head -5 "$TMP/h_cc.err"; exit 1
@@ -156,7 +156,7 @@ fi
 # ------------------------------------------- 2.5 USE_SYSLOG=0 分支可编译
 echo
 echo "== 2.5 关掉 syslog 时仍可构建（USE_SYSLOG=0 的空实现分支）=="
-if ${CC:-cc} -O1 -std=c99 -I"$ROOT/include" -DUSE_SYSLOG=0 \
+if ${CC:-cc} -O1 -std=c17 -I"$ROOT/include" -DUSE_SYSLOG=0 \
         -o "$TMP/nosyslog" "$ROOT"/src/*.c 2>"$TMP/nosyslog.err"; then
     if [ "$("$TMP/nosyslog" --version 2>/dev/null)" = "cqie-auth $(sed -n 's/^#define CQIE_VERSION *"\(.*\)"/\1/p' "$ROOT/include/config.h")" ]; then
         ok "USE_SYSLOG=0 可编译且能正常运行"
@@ -187,7 +187,7 @@ else
 #define STATE_DIR       "$TMP/state-default"
 #define REAUTH_DELAY_MS 50
 EOF
-    if ! ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/override.h" \
+    if ! ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/override.h" \
             -o "$TMP/cqie-auth" "$ROOT"/src/*.c; then
         bad "编译带测试配置的 cqie-auth 失败"
     else
@@ -372,7 +372,7 @@ else
 #define PASSWORD        "$PWD_TEST"
 #define REAUTH_DELAY_MS 50
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/f_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/f_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/force_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$FPORT" "$PWD_TEST" "$TMP/f_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -431,7 +431,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$PPORT))==0 else 1)" && break
 #define PROBE_204_LIST  "http://127.0.0.1:$PPORT/generate_204"
 #define STATE_DIR        "$TMP/state-p204"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/p204.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/p204.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/p204.err"; then
         ( cd "$TMP" && CQIE_DEBUG=1 "$TMP/cqie-under-test" status ) >"$TMP/p204.out" 2>&1
         RT=$?
@@ -462,7 +462,7 @@ else
 #define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
 #define STATE_DIR       "$TMP/state-plain"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/p_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/p_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/plain_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$PPORT" "$PWD_TEST" "$TMP/p_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -504,7 +504,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/r_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/r_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/reauth_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$RPORT" "$PWD_TEST" "$TMP/r_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -586,7 +586,7 @@ void test_syslog(int pri, const char* fmt, ...);
 EOF
     # -U_FORTIFY_SOURCE：glibc 的 fortify 会把 syslog 包成 __syslog_chk 的 inline，
     # 覆盖掉下面的 #define syslog test_syslog，导致劫持失效（Ubuntu gcc 默认开）。
-    if ${CC:-cc} -O2 -std=c99 -U_FORTIFY_SOURCE -I"$ROOT/include" -include "$TMP/nl_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -U_FORTIFY_SOURCE -I"$ROOT/include" -include "$TMP/nl_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c "$TMP/syscap.c" 2>"$TMP/nl_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$NPORT" "$PWD_TEST" "$TMP/nl_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -636,7 +636,7 @@ else
 #define PROBE_204_LIST  "http://127.0.0.1:1/generate_204"
 #define STATE_DIR       "$TMP/state-remote"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/r2_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/r2_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/remote_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$R2PORT" "$PWD_TEST" "$TMP/r2_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -692,7 +692,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/i_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/i_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/iface_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$IPORT" "$PWD_TEST" "$TMP/i_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -751,7 +751,7 @@ else
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/c_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/c_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/cfg_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$CPORT" "$PWD_TEST" "$TMP/c_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -819,7 +819,7 @@ else
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/m_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/m_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/multi_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$MPORT" "$PWD_TEST" "$TMP/m_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -889,7 +889,7 @@ else
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/w_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/w_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/wizard_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$WPORT" "$PWD_TEST" "$TMP/w_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -947,7 +947,7 @@ else
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s2_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/s2_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/s2_cc.err"; then
         # mock 提前启动：场景 B 的"命令即验证"需要在线 mock
         python3 "$ROOT/tests/mock_ac.py" "$S2PORT" "$PWD_TEST" "$TMP/s2_log.json" "$TMP/key.txt" \
@@ -1019,7 +1019,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/s3_override.h" \
+        if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/s3_override.h" \
                 -o "$TMP/cqie-s3" "$ROOT"/src/*.c 2>"$TMP/s3_cc.err"; then
             python3 "$ROOT/tests/mock_ac.py" "$S3PORT" "$PWD_TEST" "$TMP/s3_log.json" "$TMP/key.txt" "@" \
                 >/dev/null 2>&1 &
@@ -1066,7 +1066,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/n_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/n_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/nocampus_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$NPORT" "$PWD_TEST" "$TMP/n_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -1100,7 +1100,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$NPORT))==0 else 1)" && break
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/b_override.h" \
+        if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/b_override.h" \
                 -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/b_cc.err"; then
             python3 "$ROOT/tests/mock_ac.py" "$BPORT" "$PWD_TEST" "$TMP/b_log.json" "$TMP/key.txt" \
                 >/dev/null 2>&1 &
@@ -1140,7 +1140,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/l_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/l_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/lock_cc.err"; then
         mkdir -p "$TMP/state-lock"
         # 用 flock CLI 占住同一把锁，模拟另一个实例正在运行
@@ -1191,7 +1191,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/a6_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/a6_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/a6_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$APORT" "$PWD_TEST" "$TMP/a6_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -1241,7 +1241,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$APORT))==0 else 1)" && break
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/a6b_override.h" \
+        if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/a6b_override.h" \
                 -o "$TMP/cqie-under-testb" "$ROOT"/src/*.c 2>"$TMP/a6b_cc.err"; then
             ( cd "$TMP" && "$TMP/cqie-under-testb" login --config "$TMP/af4.conf" --state-dir "$TMP/state-autofix" ) \
                 >"$TMP/af_d.out" 2>"$TMP/af_d.err"
@@ -1272,7 +1272,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/g_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/g_override.h" \
             -o "$TMP/cqie-under-test" "$ROOT"/src/*.c 2>"$TMP/avoid_cc.err"; then
         # 场景：账号只绑定了"中国电信"（svc= 参数模拟）；服务端列表校园网在首；
         # 配置 service= 留空 -> 逐项尝试：校园网被拒、中国移动被拒、中国电信成功并写回
@@ -1326,7 +1326,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/t_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/t_override.h" \
             -o "$TMP/cqie-status" "$ROOT"/src/*.c 2>"$TMP/status_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$TPORT" "$PWD_TEST" "$TMP/t_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -1355,7 +1355,7 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$TPORT))==0 else 1)" && break
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-        if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/t2_override.h" \
+        if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/t2_override.h" \
                 -o "$TMP/cqie-status2" "$ROOT"/src/*.c 2>"$TMP/status2_cc.err"; then
             ( cd "$TMP" && "$TMP/cqie-status2" status --state-dir "$TMP/state-status" ) \
                 >"$TMP/st_b.out" 2>"$TMP/st_b.err"
@@ -1386,7 +1386,7 @@ else
 #define USER_ID         "testuser"
 #define PASSWORD        "$PWD_TEST"
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/y_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/y_override.h" \
             -o "$TMP/cqie-y" "$ROOT"/src/*.c 2>"$TMP/y_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$YPORT" "$PWD_TEST" "$TMP/y_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -1453,11 +1453,11 @@ EOF
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/d_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/d_override.h" \
             -o "$TMP/cqie-doc" "$ROOT"/src/*.c 2>"$TMP/d_cc.err" \
-    && ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/d2_override.h" \
+    && ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/d2_override.h" \
             -o "$TMP/cqie-doc2" "$ROOT"/src/*.c 2>>"$TMP/d_cc.err" \
-    && ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/d3_override.h" \
+    && ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/d3_override.h" \
             -o "$TMP/cqie-doc3" "$ROOT"/src/*.c 2>>"$TMP/d_cc.err"; then
         python3 "$ROOT/tests/mock_ac.py" "$DPORT" "$PWD_TEST" "$TMP/d_log.json" "$TMP/key.txt" \
             >/dev/null 2>&1 &
@@ -1529,7 +1529,7 @@ else
 #define USER_ID         ""
 #define PASSWORD        ""
 EOF
-    if ${CC:-cc} -O2 -std=c99 -I"$ROOT/include" -include "$TMP/r_override.h" \
+    if ${CC:-cc} -O2 -std=c17 -I"$ROOT/include" -include "$TMP/r_override.h" \
             -o "$TMP/cqie-reset" "$ROOT"/src/*.c 2>"$TMP/r_cc.err"; then
         printf 'user=r1\npassword=p1\nservice=\n' > "$TMP/reset.conf"
 
