@@ -27,7 +27,8 @@ http://connectivitycheck.platform.hicloud.com/generate_204
 ```
 
 认证流程实际访问的接口都由 `PORTAL_URL` 派生：`{portal}/index.jsp`（认证页）、
-`{portal}/InterFace.do?method=login|logout|getServices`、
+`{portal}/InterFace.do?method=login|logout`（提交/注销会话）、
+`{portal}/userV2.do?method=getServices`（运营商列表，登录探测与向导序号选择用）、
 `{portal}/redirectortosuccess.jsp`（注销时找回 userIndex）。
 
 ## 特性

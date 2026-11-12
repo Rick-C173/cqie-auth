@@ -589,7 +589,9 @@ int main(int argc, char** argv)
             cli_user = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "-p")) || (v = opt_val(argc, argv, &i, "--password")))
+        if ((v = opt_val(argc, argv, &i, "-p")) ||
+            (v = opt_val(argc, argv, &i, "--pass")) ||   /* usage/README 写法，1.9.1 起真实生效 */
+            (v = opt_val(argc, argv, &i, "--password")))
         {
             cli_pass = v;
             continue;
@@ -619,6 +621,43 @@ int main(int argc, char** argv)
             return 2;
         }
     }
+
+    /*
+     * 调试档次（对外语义，见 config.h）：0=正常 1=流程 2=HTTP细节 3=全部
+     * 内部级别比它大一档（WARN/INFO/DEBUG/TRACE）。
+     * 优先级：-q > -v 个数 > $CQIE_DEBUG > 编译期 DEBUG_DEFAULT
+     *
+     * 必须在命令分发（含 --setup 独立运行）之前完成：向导"命令即验证"的
+     * 实测登录发生在该分支里，日志初始化若在其后，-v/--log/--no-syslog/
+     * --plain 会全部失效，且默认 WARN 级别吞掉验证阶段的 INFO 流程日志
+     * （1.9.1 修复）。
+     */
+    int level;
+    if (quiet)
+    {
+        level = LOG_LEVEL_QUIET;
+    }
+    else
+    {
+        int dlevel;
+        if (verbose > 0)
+        {
+            dlevel = verbose;
+        }
+        else
+        {
+            const char* env = getenv("CQIE_DEBUG");
+            dlevel = DEBUG_DEFAULT;
+            if (env && env[0]) dlevel = atoi(env);
+        }
+        if (dry_run && dlevel < 1) dlevel = 1; /* dry-run 自动带流程日志 */
+        if (dlevel < 0) dlevel = 0;
+        if (dlevel > 3) dlevel = 3;
+        level = LOG_LEVEL_WARN + dlevel;
+    }
+    log_init(level, log_file);
+    log_set_syslog(!no_syslog); /* --no-syslog：本次运行不写 syslog 状态行 */
+    auth_set_plain(plain);      /* --plain 对向导独立运行的实测登录同样生效 */
 
     if (!cmd)
     {
@@ -685,37 +724,6 @@ int main(int argc, char** argv)
         usage(stdout, argv[0]);
         return 0;
     }
-
-    /*
-     * 调试档次（对外语义，见 config.h）：0=正常 1=流程 2=HTTP细节 3=全部
-     * 内部级别比它大一档（WARN/INFO/DEBUG/TRACE）。
-     * 优先级：-q > -v 个数 > $CQIE_DEBUG > 编译期 DEBUG_DEFAULT
-     */
-    int level;
-    if (quiet)
-    {
-        level = LOG_LEVEL_QUIET;
-    }
-    else
-    {
-        int dlevel;
-        if (verbose > 0)
-        {
-            dlevel = verbose;
-        }
-        else
-        {
-            const char* env = getenv("CQIE_DEBUG");
-            dlevel = DEBUG_DEFAULT;
-            if (env && env[0]) dlevel = atoi(env);
-        }
-        if (dry_run && dlevel < 1) dlevel = 1; /* dry-run 自动带流程日志 */
-        if (dlevel < 0) dlevel = 0;
-        if (dlevel > 3) dlevel = 3;
-        level = LOG_LEVEL_WARN + dlevel;
-    }
-    log_init(level, log_file);
-    log_set_syslog(!no_syslog); /* --no-syslog：本次运行不写 syslog 状态行 */
 
     /* 凭据配置文件：--config > $CQIE_CONFIG > 编译期默认（可选文件，缺席不报错） */
     const char* cfg_path = cfg_opt ? cfg_opt : getenv("CQIE_CONFIG");

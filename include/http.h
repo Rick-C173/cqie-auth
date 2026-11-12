@@ -41,6 +41,16 @@ long http_req_location(const char* url, char* loc, size_t locsz);
 int is_online(void);
 
 /*
+ * is_online 的扩展版：在同一 poll 循环里**并行**附加一个纯 TCP 可达性探测
+ * （只建连不发包），供 status 等需要"在线 + portal 可达"两个结果的场景
+ * 一次跑完——最坏耗时从串行的 2×2s 降为共享一个总 deadline（PROBE_TIMEOUT_S）。
+ * extra_host 非空时 *extra_reachable 收到 1=可达 / 0=不可达（DNS 失败也算不可达）；
+ * extra_host 传 NULL/空串则退化为 is_online()，*extra_reachable 不被写入。
+ * 语义与 is_online 相同：只返回 1=在线 / 0=离线。
+ */
+int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable);
+
+/*
  * 源 IP 绑定（--interface）：设置后所有 HTTP 请求（探测 + 认证）的 socket
  * 在 connect 前 bind 该 IPv4 地址，强制从指定网卡出去。多网卡/多 WAN 时
  * 防止认证流量走错出口。

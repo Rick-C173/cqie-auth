@@ -911,7 +911,7 @@ static void probe_step(probe_t* p, int* hit)
     }
 }
 
-int is_online(void)
+int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
 {
     static int sigpipe_done;
     if (!sigpipe_done)
@@ -958,15 +958,49 @@ int is_online(void)
         pending++;
     }
 
-    /* 2) 单个 poll 循环驱动所有探测 */
+    /* 附加的纯 TCP 可达性探测（is_online_ex）：只建连不发包，与 204 探测
+     * 共享同一个 poll 循环和总 deadline。idx 哨兵 EXTRA_IDX 区分两类 fd。 */
+    sock_t extra_fd = SOCK_INVALID;
+    int extra_done = 0, extra_ok = 0;
+    if (extra_host && extra_host[0] && extra_reachable)
+    {
+        extra_fd = connect_start(extra_host, extra_port);
+        if (extra_fd == SOCK_INVALID)
+        {
+            LOG_DEBUG("[probe] 附加探测 %s:%d -> DNS/连接发起失败", extra_host, extra_port);
+            extra_done = 1; /* DNS 失败即定论不可达 */
+        }
+        else
+            pending++;
+    }
+    else
+        extra_done = 1;
+
+    /* 2) 单个 poll 循环驱动所有探测。
+     * 退出条件从"204 命中"扩为"204 命中且附加探测已定论"——两个结果
+     * 调用方（cmd_status）都要；204 命中后其余 204 连接直接放弃，
+     * 只为等附加探测定论收尾。 */
+#define EXTRA_IDX PROBE_MAX
     int hit = 0;
-    while (pending && !hit)
+    while (pending && !(hit && extra_done))
     {
         long left = remain_ms(deadline);
         if (left <= 0) break;
 
-        struct pollfd pfds[PROBE_MAX];
-        size_t idx[PROBE_MAX], m = 0;
+        if (hit && !extra_done)
+        {
+            /* 204 已命中：放弃其余 204 连接，poll 列表只剩附加探测 */
+            for (size_t i = 0; i < n; i++)
+                if (g_probe[i].fd != SOCK_INVALID)
+                {
+                    sock_close(g_probe[i].fd);
+                    g_probe[i].fd = SOCK_INVALID;
+                    pending--;
+                }
+        }
+
+        struct pollfd pfds[PROBE_MAX + 1];
+        size_t idx[PROBE_MAX + 1], m = 0;
         for (size_t i = 0; i < n; i++)
         {
             probe_t* p = &g_probe[i];
@@ -976,6 +1010,13 @@ int is_online(void)
             pfds[m].revents = 0;
             idx[m++] = i;
         }
+        if (extra_fd != SOCK_INVALID)
+        {
+            pfds[m].fd = (int)extra_fd;
+            pfds[m].events = POLLOUT;
+            pfds[m].revents = 0;
+            idx[m++] = EXTRA_IDX;
+        }
         if (!m) break;
 
         int r = poll(pfds, (nfds_t)m, (int)left);
@@ -984,6 +1025,16 @@ int is_online(void)
         for (size_t k = 0; k < m; k++)
         {
             if (!pfds[k].revents) continue;
+            if (idx[k] == EXTRA_IDX)
+            {
+                /* portal 可达性：POLLOUT/POLLERR 后以 SO_ERROR 定论 */
+                extra_ok = (sock_take_error(extra_fd) == 0);
+                sock_close(extra_fd);
+                extra_fd = SOCK_INVALID;
+                extra_done = 1;
+                pending--;
+                continue;
+            }
             probe_t* p = &g_probe[idx[k]];
             probe_step(p, &hit);
             if (p->phase == 3 && p->fd != SOCK_INVALID)
@@ -995,6 +1046,7 @@ int is_online(void)
             if (hit) break;
         }
     }
+#undef EXTRA_IDX
 
     /* 3) 收尾：关掉所有还开着的 fd */
     for (size_t i = 0; i < n; i++)
@@ -1003,6 +1055,17 @@ int is_online(void)
             sock_close(g_probe[i].fd);
             g_probe[i].fd = SOCK_INVALID;
         }
+    if (extra_fd != SOCK_INVALID)
+    {
+        sock_close(extra_fd); /* 总 deadline 到仍未定论，按不可达收场 */
+        extra_fd = SOCK_INVALID;
+    }
+    if (extra_host && extra_host[0] && extra_reachable)
+    {
+        *extra_reachable = extra_ok;
+        LOG_INFO("附加可达性探测 %s:%d -> %s", extra_host, extra_port,
+                 extra_ok ? "可达" : "不可达");
+    }
 
     if (hit)
     {
@@ -1011,4 +1074,9 @@ int is_online(void)
     }
     LOG_INFO("在线探测: 并行 %zu 个地址均未返回 204 (%ld ms)", n, log_tick_ms() - t0);
     return 0;
+}
+
+int is_online(void)
+{
+    return is_online_ex(NULL, 0, NULL);
 }

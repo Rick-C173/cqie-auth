@@ -135,16 +135,26 @@ static int portal_endpoint(char* buf, size_t n, const char* method)
  * 校园网环境预检：portal 是校园网内网地址，出了校园网 TCP 必然不可达；
  * 校园网内无论是否认证都可达——这是唯一可移植的"是否在校园网"判据。
  */
-static int portal_reachable(void)
+/* 从 portal() 解析 host/port（http:// 后段；路径忽略，port 缺省 80） */
+static int portal_host_port(char* host, size_t hsz, int* port)
 {
     const char* p = strstr(portal(), "http://");
     if (!p) return 0;
     p += 7;
-    char host[128] = "";
     size_t i = 0;
-    while (*p && *p != '/' && *p != ':' && i + 1 < sizeof host) host[i++] = *p++;
-    int port = 80;
-    if (*p == ':') port = atoi(p + 1);
+    while (*p && *p != '/' && *p != ':' && i + 1 < hsz) host[i++] = *p++;
+    host[i] = 0;
+    if (!host[0]) return 0;
+    *port = 80;
+    if (*p == ':') *port = atoi(p + 1);
+    return 1;
+}
+
+static int portal_reachable(void)
+{
+    char host[128];
+    int port;
+    if (!portal_host_port(host, sizeof host, &port)) return 0;
     return http_host_reachable(host, port, HTTP_CONNECT_TIMEOUT_S * 1000L);
 }
 
@@ -376,13 +386,21 @@ static int service_pick(const char* list, const char* name, char* out, size_t ou
 int cmd_status(void)
 {
     /* 三态退出码：0=在线 1=离线 2=能上外网但 portal 不可达（不在校园网）。
-     * 旧脚本按布尔判断（0/非 0）仍然兼容。 */
-    int online = is_online();
+     * 旧脚本按布尔判断（0/非 0）仍然兼容。
+     * 1.9.2 起两个探测并行（同一 poll 循环、同一总 deadline），
+     * 最坏耗时 ~2s（原串行 2s+2s）。 */
+    int online, preachable = 0;
+    char host[128];
+    int port;
+    if (portal_host_port(host, sizeof host, &port))
+        online = is_online_ex(host, port, &preachable);
+    else
+        online = is_online(); /* portal 形态异常：退回纯在线判定 */
     int code = 1;
     const char* state = "未在线";
     if (online)
     {
-        if (portal_reachable())
+        if (preachable)
         {
             code = 0;
             state = "已在线";
@@ -908,6 +926,8 @@ int cmd_doctor(const char* cfg_path)
     printf("cqie-auth 环境诊断\n\n");
     long t0 = log_tick_ms();
     int problems = 0;
+    char cfg_portal[256];
+    snprintf(cfg_portal, sizeof cfg_portal, "%s", portal()); /* 配置链 portal（[2/4] 发现前的值） */
 
     /* [1/4] 外网连通 */
     printf("[1/4] 外网连通（并行探测 204 端点）\n");
@@ -937,8 +957,13 @@ int cmd_doctor(const char* cfg_path)
         printf("      -- 不可达或无劫持响应（已认证时属正常；未认证时说明地址失效）\n");
     }
 
-    /* [3/4] 认证服务器可达性 */
+    /* [3/4] 认证服务器可达性。
+     * [2/4] 的发现值已即时生效（auth_discover_portal 内 auth_set_portal），
+     * 本环检查的可能是发现的认证页而非配置 portal——两者不同时明确告知。 */
     printf("[3/4] 认证服务器 %s\n", portal());
+    if (discovered && strcmp(dportal, cfg_portal) != 0)
+        printf("      注意: 与配置 portal=%s 不同（发现值已临时生效，本环检查的是发现值）\n",
+               cfg_portal);
     t0 = log_tick_ms();
     int preachable = portal_reachable();
     if (preachable)

@@ -970,8 +970,9 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
         # 场景 B：cqie-auth --setup 单独运行（无命令）-> 实测验证通过后写配置，exit 0
         # 配置路径指向不存在的嵌套目录，顺带验证父目录自动创建
         # 喂入：user/密码/跳转回车/路径回车/序号 9(无效重问)/序号 1(中国移动)
+        # -v：顺带验证 1.9.1 日志初始化上移——独立 --setup 的实测登录应输出 INFO 流程日志
         ( cd "$TMP" && printf 's2user\n%s\n\n\n9\n1\n' "$PWD_TEST" \
-          | "$TMP/cqie-under-test" --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
+          | "$TMP/cqie-under-test" -v --setup --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
             >"$TMP/s2.out" 2>"$TMP/s2.err"
         RTS=$?
         [ "$RTS" = "0" ] && grep -q "配置完成" "$TMP/s2.out" \
@@ -986,6 +987,10 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
             && ok "--setup 独立运行: 运营商序号选择（无效重问后按序号写入）" \
             || bad "--setup 独立运行: 序号选择不对" "service=中国移动 且提示「序号超出范围」" \
                    "$(grep '^service' "$TMP/deep/nested/s2.conf" 2>/dev/null) | $(grep -A1 '序号' "$TMP/s2.out" | head -2)"
+        grep -q "开始认证" "$TMP/s2.err" \
+            && ok "--setup 独立运行: -v 下实测登录流程日志可见（1.9.1 日志上移）" \
+            || bad "--setup 独立运行: -v 应看到认证流程日志" "s2.err 含「开始认证」" \
+                   "$(head -3 "$TMP/s2.err")"
 
         # 场景 C：写完的配置立刻可用（login 读它认证成功；复用场景 B 的 mock）
         ( cd "$TMP" && "$TMP/cqie-under-test" login --config "$TMP/deep/nested/s2.conf" --state-dir "$TMP/state-s2" ) \
@@ -994,6 +999,14 @@ sys.exit(0 if s.connect_ex(('127.0.0.1',$S2PORT))==0 else 1)" && break
             && ok "--setup 独立运行: 生成的配置可直接登录" \
             || bad "--setup 独立运行: 登录应成功" "含「认证成功」" "$(cat "$TMP/s2_login.out")"
         kill $S2_MOCK 2>/dev/null
+
+        # 场景 B2：--pass 长选项别名（1.9.1）——应被解析而非"未知选项"
+        # （PROBE_204 指向 127.0.0.1:1，status 探测即失败 exit 1，选项解析失败才会报"未知选项"）
+        "$TMP/cqie-under-test" --pass=x status --state-dir "$TMP/state-s2" \
+            >"$TMP/sp.out" 2>"$TMP/sp.err"
+        grep -q "未知选项" "$TMP/sp.err" \
+            && bad "--pass 别名: --pass=VALUE 应被识别" "无「未知选项」" "$(head -1 "$TMP/sp.err")" \
+            || ok "--pass 别名: --pass=VALUE 正常解析（1.9.1）"
 
         # 场景 D：探测到列表但全为空项（SERVICES="@"）-> 回退自由输入，
         # 手动输入"校园网"，实测登录成功后写盘

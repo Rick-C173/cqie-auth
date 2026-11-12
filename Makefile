@@ -45,7 +45,8 @@ OWRT_CFLAGS := -Iinclude -I$(OWRT_STG)/usr/include \
 OWRT_LDFLAGS := -static -flto -Wl,--gc-sections -Wl,-O2 -Wl,--as-needed \
                 -L$(OWRT_STG)/usr/lib
 
-OWRT_LIBS   := -lpthread
+# 无需 -lpthread：代码零 pthread 调用（探测=单 poll 循环，锁=flock），
+# musl 的 pthread 融合在 libc，链接空壳库反而多一层依赖（1.9.2 移除）
 
 OWRT_BIN := dist/cqie-auth.owrt
 
@@ -54,8 +55,8 @@ OWRT_BIN := dist/cqie-auth.owrt
 # opkg 安装后即得网页界面；cqie-auth 二进制仍走 make openwrt / Release 下载。
 LUCI_APP     := openwrt/luci-app-cqie-auth
 LUCI_NAME    := luci-app-cqie-auth
-LUCI_VERSION := 1.9.0
-LUCI_RELEASE := 3
+LUCI_VERSION := 1.9.2
+LUCI_RELEASE := 1
 LUCI_IPK     := dist/$(LUCI_NAME)_$(LUCI_VERSION)-$(LUCI_RELEASE)_all.ipk
 
 .PHONY: all clean strip check openwrt openwrt-size linux windows luci FORCE
@@ -99,7 +100,7 @@ FORCE:
 openwrt:
 	@mkdir -p dist
 	STAGING_DIR=$(OWRT_STG) $(OWRT_CC) $(OWRT_CFLAGS) $(OWRT_LDFLAGS) \
-	    -o $(OWRT_BIN) $(SRCS) $(OWRT_LIBS)
+	    -o $(OWRT_BIN) $(SRCS)
 	$(OWRT_STRIP) --strip-all $(OWRT_BIN)
 	-$(OWRT_SSTRIP) $(OWRT_BIN)
 	@echo "--- 产物 ---"

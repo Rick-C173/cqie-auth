@@ -27,7 +27,6 @@ define Package/cqie-auth
   CATEGORY:=Network
   TITLE:=锐捷 ePortal 校园网认证工具（命令行）
   URL:=https://github.com/Rick-C173/cqie-auth
-  DEPENDS:=+libpthread
 endef
 
 define Package/cqie-auth/description
@@ -42,7 +41,7 @@ define Build/Compile
 		-I$(PKG_BUILD_DIR)/include \
 		-o $(PKG_BUILD_DIR)/cqie-auth \
 		$(wildcard $(PKG_BUILD_DIR)/src/*.c) \
-		$(TARGET_LDFLAGS) -lpthread
+		$(TARGET_LDFLAGS)
 endef
 
 define Package/cqie-auth/install

@@ -3,6 +3,33 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.9.2] - 2026-11-12
+
+### Changed
+- **`status` 两探测并行**：在线判定（204 端点）与 portal 可达性并入同一个
+  poll 循环（新内部 API `is_online_ex`，`is_online` 退化为包装），
+  最坏耗时 ~2s（原串行 2s+2s）；退出码语义不变
+- **doctor 的 portal 语义透明化**：探测发现认证页与配置 portal 不同时，
+  [3/4] 环节明确标注"检查的是发现值"（此前静默切换易让人误以为在检查配置值）
+- **OpenWrt 构建移除 `-lpthread`**：代码零 pthread 调用（探测=单 poll 循环，
+  锁=flock），musl 的 pthread 融合在 libc；包定义同步去掉 `+libpthread`
+  依赖；LuCI ipk 版本号与主程序对齐（1.9.2-1）
+
+## [1.9.1] - 2026-11-12
+
+### Fixed
+- **`-p` 的长选项别名 `--pass` 现在真实生效**：usage/README 写的是 `--pass`，
+  代码此前只解析 `--password`，按文档敲 `--pass xxx` 会报"未知选项"退出；
+  现 `--pass`（含 `--pass=VALUE` 形式）与 `--password` 均可识别
+- **`cqie-auth --setup` 独立运行时日志与选项生效**：该分支此前在日志初始化
+  之前执行，`-v`/`--log`/`--no-syslog`/`--plain` 全部未应用，且默认 WARN
+  级别吞掉向导"命令即验证"实测登录阶段的全部 INFO 流程日志；现日志初始化
+  上移到命令分发之前，实测阶段可见"开始认证/网络状态"等过程信息
+
+### Changed
+- README 协议概览更正：运营商列表实际走 `userV2.do?method=getServices`
+  （此前误写为 `InterFace.do?method=login|logout|getServices`）
+
 ## [1.9.0] - 2026-11-11
 
 ### Added
