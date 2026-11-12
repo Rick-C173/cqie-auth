@@ -49,7 +49,9 @@ Checks: >
   readability-simplify-subscript-expr,
   readability-static-definition-in-anonymous-namespace,
   clang-analyzer-core.*,
-  clang-analyzer-security.*
+  clang-analyzer-security.*,
+  clang-analyzer-unix.*,
+  clang-analyzer-valist.*
 
 WarningsAsErrors: 'bugprone-*,clang-analyzer-security.*'
 HeaderFilterRegex: '^(?!.*staging_dir|.*build_dir|.*toolchain).*/(src|include)/.*'

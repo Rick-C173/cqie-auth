@@ -3,6 +3,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本号遵循
 [语义化版本](https://semver.org/)。
 
+## [1.9.4] - 2026-11-12
+
+### Added
+- **编码规范成文：`docs/CODING.md`**——"成文规范 + 工具强制"体系：语言/编译门禁、
+  静态分析门禁、风格（clang-format）、内存与字符串安全、错误处理惯例、版本纪律，
+  并附 MISRA C 偏离记录表（选择性采纳条款 + 显式偏离理由）
+
+### Changed
+- **编译门禁强化**（Makefile）：`-Wshadow -Wstrict-prototypes -Wmissing-prototypes
+  -Wformat=2` 加入常规告警面，三平台零告警保持
+- **clang-tidy 检查族扩展**：新增 `clang-analyzer-unix.*`（malloc/文件句柄泄漏、
+  API 误用）与 `clang-analyzer-valist.*`
+- `urlencode` 重写为**上界可推导**分配（`malloc(3n+1)` 单遍写入）：原"两遍遍历 +
+  精确分配"逻辑正确，但分析器无法证明两次判定一致而报 `security.ArrayBound`；
+  上界分配让安全性可直接推导（多占用的临时内存 ≤2n+1 字节，调用后即 free）
+
 ## [1.9.3] - 2026-11-12
 
 ### Fixed

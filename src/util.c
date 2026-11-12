@@ -11,10 +11,12 @@
 char* urlencode(const char* s)
 {
     static const char hx[] = "0123456789ABCDEF";
-    size_t n = 0;
-    for (const char* p = s; *p; p++)
-        n += (isalnum((unsigned char)*p) || strchr("._~-", *p)) ? 1 : 3;
-    char* o = malloc(n + 1);
+    if (!s) return NULL;
+    /* 上界分配（每字符最多扩到 3 字节），单遍写入——两遍遍历+精确分配的
+     * 旧写法逻辑正确，但分析器无法证明两次 isalnum/strchr 判定一致，
+     * 会报 security.ArrayBound；上界分配让安全性可直接推导。 */
+    size_t n = strlen(s);
+    char* o = malloc(n * 3 + 1);
     if (!o) return NULL;
     char* w = o;
     for (const char* p = s; *p; p++)

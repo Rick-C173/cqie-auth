@@ -5,7 +5,13 @@ STRIP   ?= strip
 # HTTP 客户端是自实现的 socket 版（src/http_min.c）：
 # 零外部依赖、静态链接约 130KB、只支持 http://（本项目所有 URL 都是明文）。
 
-CFLAGS  += -O2 -Wall -Wextra -std=c99 -ffunction-sections -fdata-sections
+# 告警面（项目编码规范 docs/CODING.md 的门禁之一）：
+#   -Wshadow            局部变量不得遮蔽外层/全局名
+#   -Wstrict-prototypes 无参函数必须写 (void)
+#   -Wmissing-prototypes 公开函数必须有原型（static 不受影响）
+#   -Wformat=2          格式串与实参强校验 + 非常量格式串告警
+CFLAGS  += -O2 -Wall -Wextra -Wshadow -Wstrict-prototypes -Wmissing-prototypes \
+           -Wformat=2 -std=c99 -ffunction-sections -fdata-sections
 LDFLAGS += -Wl,--gc-sections
 
 # 所有构建产物统一落在根目录的 dist/ 下（对象文件/二进制/ipk），
