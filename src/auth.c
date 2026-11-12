@@ -5,6 +5,9 @@
 // 约定：结果（userIndex / 注销响应 / 已在线）走 stdout，诊断信息走 stderr（见 log.h）。
 //
 #define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（getaddrinfo / inet_ntop，-std=c99/c17 ISO 模式下需显式开启） */
+#include <errno.h>
+#include <errno.h>
+#include <errno.h>
 #include "auth.h"
 #include "config.h"
 #include "bn.h"
@@ -163,7 +166,9 @@ static int portal_host_port(char* host, size_t hsz, int* port)
     size_t i = 0;
     while (*p && *p != '/' && *p != ':' && i + 1 < hsz)
     {
-        host[i++] = *p++;
+        host[i] = *p;
+        i++;
+        p++;
     }
     host[i] = 0;
     if (!host[0])
@@ -173,7 +178,12 @@ static int portal_host_port(char* host, size_t hsz, int* port)
     *port = 80;
     if (*p == ':')
     {
-        *port = (int)strtol(p + 1, NULL, 10);
+        errno = 0;
+        long pv = strtol(p + 1, NULL, 10);
+        if (errno == 0 && pv > 0 && pv <= 65535)
+        {
+            *port = (int)pv;
+        }
     }
     return 1;
 }
@@ -186,7 +196,7 @@ static int portal_reachable(void)
     {
         return 0;
     }
-    return http_host_reachable(host, port, HTTP_CONNECT_TIMEOUT_S * 1000L);
+    return http_host_reachable(host, port, HTTP_CONNECT_TIMEOUT_MS);
 }
 
 /* 打印表单内容，password 字段打码（日志里不留口令派生值） */
@@ -379,7 +389,7 @@ static int fetch_services(const char* qs, const char* referer, char* out, size_t
  * 排到所有普通项之后（"校园网"为限时套餐，误选会消耗免费时长）。
  * 精确配置命中的运营商不受影响。
  */
-static const char* const SERVICE_AVOID[] = { "校园网" };
+static const char* const SERVICE_AVOID[1] = { "校园网" };
 
 static int service_avoided(const char* p, size_t len)
 {
@@ -392,7 +402,7 @@ static int service_avoided(const char* p, size_t len)
         }
         for (size_t j = 0; j + kwl <= len; j++)
         {
-            if (memcmp(p + j, SERVICE_AVOID[i], kwl) == 0)
+            if (strncmp(p + j, SERVICE_AVOID[i], kwl) == 0)
             {
                 return 1;
             }
@@ -523,10 +533,14 @@ int auth_session_lock(void)
 
 void auth_session_unlock(void)
 {
-    if (g_lock_depth > 0 && --g_lock_depth == 0)
+    if (g_lock_depth > 0)
     {
-        compat_unlock_file(g_session_lock);
-        g_session_lock = NULL;
+        g_lock_depth--;
+        if (g_lock_depth == 0)
+        {
+            compat_unlock_file(g_session_lock);
+            g_session_lock = NULL;
+        }
     }
 }
 
@@ -610,7 +624,11 @@ static int login_impl(int force, int known_offline)
 
     /* queryString = 第一个 '?' 之后 */
     char* qs = strchr(redir, '?');
-    if (!qs || !*++qs)
+    if (qs != NULL)
+    {
+        qs++;
+    }
+    if (qs == NULL || *qs == 0)
     {
         LOG_ERROR("queryString为空");
         goto done;
@@ -989,8 +1007,9 @@ static int logout_once(const char* user_index)
     return ret;
 }
 
-int cmd_logout(const char* user_index)
+int cmd_logout(const char* user_index_arg)
 {
+    const char* user_index = user_index_arg;
     if (!auth_session_lock())
     {
         return 1;
@@ -1206,8 +1225,9 @@ int cmd_doctor(const char* cfg_path)
     return problems ? 1 : 0;
 }
 
-int cmd_userindex(const char* hex)
+int cmd_userindex(const char* hex_arg)
 {
+    const char* hex = hex_arg;
     char buf[1024];
     if (!hex)
     {

@@ -25,13 +25,13 @@ static int mkdir_p(const char* path)
 {
     char tmp[512];
     (void)snprintf(tmp, sizeof tmp, "%s", path);
-    for (char* p = tmp + 1; *p; p++)
+    for (size_t si = 1; tmp[si] != 0; si++)
     {
-        if (*p != '/' && *p != '\\')
+        if (tmp[si] != '/' && tmp[si] != '\\')
         {
             continue;
         }
-        *p = 0;
+        tmp[si] = 0;
         /* Windows 盘根（"C:"）不是可创建目录：_mkdir 报错属正常，stat 也
          * 未必成功（CRT 把 "C:" 当作该盘当前目录），直接放行 */
         int drive_root = tmp[0] && tmp[1] == ':' && tmp[2] == 0;
@@ -43,7 +43,7 @@ static int mkdir_p(const char* path)
                 return 0;
             }
         }
-        *p = '/';
+        tmp[si] = '/';
     }
     if (compat_mkdir(tmp) != 0)
     {

@@ -30,13 +30,17 @@ char* urlencode(const char* s)
         unsigned char ch = (unsigned char)*p;
         if (isalnum(ch) || strchr("._~-", ch))
         {
-            *w++ = (char)ch;
+            *w = (char)ch;
+        w++;
         }
         else
         {
-            *w++ = '%';
-            *w++ = hx[ch >> 4];
-            *w++ = hx[ch & 15];
+            *w = '%';
+    w++;
+            *w = hx[ch >> 4];
+        w++;
+            *w = hx[ch & 15];
+        w++;
         }
     }
     *w = 0;
@@ -69,7 +73,9 @@ int extract_field(const char* page, const char* field, char* out, size_t outsz)
     size_t i = 0;
     while (*p && *p != '"' && i + 1 < outsz)
     {
-        out[i++] = *p++;
+        out[i] = *p;
+        i++;
+        p++;
     }
     out[i] = 0;
     return i > 0;
@@ -110,13 +116,15 @@ int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz)
     const char* p = qs;
     /* 与 extract_mac 原行为一致：取最后一次出现；
      * 参数名必须完整（前面是 & 或串首，后面紧跟 =），避免 wlanmac 之类误匹配 */
-    while ((p = strstr(p, name)) != NULL)
+    p = strstr(p, name);
+    while (p != NULL)
     {
         if ((p == qs || p[-1] == '&') && p[nl] == '=')
         {
             m = p;
         }
         p += nl;
+        p = strstr(p, name);
     }
     if (!m)
     {
@@ -126,7 +134,9 @@ int extract_qs_param(const char* qs, const char* name, char* out, size_t outsz)
     size_t i = 0;
     while (*v && *v != '&' && i + 1 < outsz)
     {
-        out[i++] = *v++;
+        out[i] = *v;
+        i++;
+        v++;
     }
     out[i] = 0;
     return i > 0;
@@ -212,7 +222,8 @@ int file_read_trim(const char* path, char* out, size_t outsz)
     char* e = s + strlen(s);
     while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
     {
-        *--e = 0;
+        e--;
+    *e = 0;
     }
     if (s != out)
     {

@@ -55,10 +55,8 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable);
  * 在 connect 前 bind 该 IPv4 地址，强制从指定网卡出去。多网卡/多 WAN 时
  * 防止认证流量走错出口。
  * ip 传 NULL/空串恢复默认（由路由表决定）；格式非法返回 -1，成功返回 0。
- * http_source_ip() 返回当前绑定值（未绑定时为空串）。
  */
 int http_set_source_ip(const char* ip);
-const char* http_source_ip(void);
 
 /*
  * 主机 TCP 可达性检查（只建连不发包，立刻关闭）。

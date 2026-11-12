@@ -246,7 +246,8 @@ static int read_line(char* buf, size_t sz, int echo_off)
         size_t n = strlen(buf);
         while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
         {
-            buf[--n] = 0;
+            n--;
+    buf[n] = 0;
         }
     }
     else
@@ -279,13 +280,13 @@ static void make_parent_dirs(const char* path)
         return;
     }
     *slash = 0;
-    for (char* p = dir + 1; *p; p++)
+    for (size_t di = 1; dir[di] != 0; di++)
     {
-        if (*p == '/')
+        if (dir[di] == '/')
         {
-            *p = 0;
+            dir[di] = 0;
             (void)compat_mkdir(dir); /* 已存在时报错属正常，忽略 */
-            *p = '/';
+            dir[di] = '/';
         }
     }
     (void)compat_mkdir(dir);
@@ -596,13 +597,15 @@ static int load_config_file(const char* path,
         size_t kl = strlen(k);
         while (kl && (k[kl - 1] == ' ' || k[kl - 1] == '\t'))
         {
-            k[--kl] = 0;
+            kl--;
+    k[kl] = 0;
         }
         size_t vl = strlen(v);
         while (vl &&
                (v[vl - 1] == '\n' || v[vl - 1] == '\r' || v[vl - 1] == ' ' || v[vl - 1] == '\t'))
         {
-            v[--vl] = 0;
+            vl--;
+    v[vl] = 0;
         }
         if (!strcmp(k, "user"))
         {
@@ -624,7 +627,10 @@ static int load_config_file(const char* path,
         {
             (void)snprintf(probe_buf, pbsz, "%s", v);
         }
-        /* 其余键忽略：允许用户加自定义备注行 */
+        else
+        {
+            /* 其余键忽略：允许用户加自定义备注行 */
+        }
     }
     (void)fclose(fp);
     return 1;
@@ -705,44 +711,62 @@ int main(int argc, char** argv)
             return 0;
         }
         const char* v;
-        if ((v = opt_val(argc, argv, &i, "--log")))
+        v = opt_val(argc, argv, &i, "--log");
+        if (v != NULL)
         {
             log_file = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "--state-dir")))
+        v = opt_val(argc, argv, &i, "--state-dir");
+        if (v != NULL)
         {
             state_opt = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "--portal")))
+        v = opt_val(argc, argv, &i, "--portal");
+        if (v != NULL)
         {
             portal_opt = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "--interface")))
+        v = opt_val(argc, argv, &i, "--interface");
+        if (v != NULL)
         {
             iface = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "--config")))
+        v = opt_val(argc, argv, &i, "--config");
+        if (v != NULL)
         {
             cfg_opt = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "-u")) || (v = opt_val(argc, argv, &i, "--user")))
+        v = opt_val(argc, argv, &i, "-u");
+        if (v == NULL)
+        {
+            v = opt_val(argc, argv, &i, "--user");
+        }
+        if (v != NULL)
         {
             cli_user = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "-p")) ||
-            (v = opt_val(argc, argv, &i, "--pass")) ||   /* usage/README 写法，1.9.1 起真实生效 */
-            (v = opt_val(argc, argv, &i, "--password")))
+        v = opt_val(argc, argv, &i, "-p");
+        if (v == NULL)
+        {
+            v = opt_val(argc, argv, &i, "--pass"); /* usage/README 写法，1.9.1 起真实生效 */
+        }
+        if (v == NULL)
+        {
+            v = opt_val(argc, argv, &i, "--password");
+        }
+        if (v != NULL)
         {
             cli_pass = v;
             continue;
         }
-        if ((v = opt_val(argc, argv, &i, "--service")))
+        v = opt_val(argc, argv, &i, "--service");
+        if (v != NULL)
         {
             cli_svc = v;
             continue;
@@ -802,7 +826,12 @@ int main(int argc, char** argv)
             dlevel = DEBUG_DEFAULT;
             if (env && env[0])
             {
-                dlevel = (int)strtol(env, NULL, 10);
+                errno = 0;
+                long dl = strtol(env, NULL, 10);
+                if (errno == 0)
+                {
+                    dlevel = (int)dl;
+                }
             }
         }
         if (dry_run && dlevel < 1)
@@ -912,7 +941,8 @@ int main(int argc, char** argv)
     char cfg_svc_raw[128]= {0}; /* 配置文件里的原始 service 值（写回自愈的基准） */
     char cfg_portal[256]= {0};  /* 配置文件里的 portal=（可选，覆盖编译期默认） */
     char cfg_probe[512]= {0};   /* 配置文件里的 probe=（可选，覆盖编译期默认） */
-    char cfg_user[128]= {0}, cfg_pass[256] = ""; /* 向导重试预填用 */
+    char cfg_user[128]= {0}; /* 向导重试预填用 */
+    char cfg_pass[256]= {0};
     {
         char cfg_svc[128]= {0};
         int explicit_cfg = cfg_opt != NULL; /* 只有 --config 缺文件才报错；env 静默 */
@@ -928,6 +958,10 @@ int main(int argc, char** argv)
             (void)fprintf(stderr, "配置文件不存在或不可读: %s\n\n", cfg_path);
             usage(stderr, argv[0]);
             return 2;
+        }
+        else
+        {
+            /* 配置不存在且非显式指定：走默认状态目录/向导 */
         }
         (void)snprintf(cfg_svc_raw, sizeof cfg_svc_raw, "%s", cfg_svc);
         auth_set_credentials(cfg_user, cfg_pass, cfg_svc);

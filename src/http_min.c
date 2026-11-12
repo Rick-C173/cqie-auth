@@ -129,10 +129,11 @@ static int parse_url(const char* url, url_t* u)
     u->port = 80;
     if (colon)
     {
-        int pv = (int)strtol(colon + 1, NULL, 10);
-        if (pv > 0 && pv < 65536)
+        errno = 0;
+        long pv_l = strtol(colon + 1, NULL, 10);
+        if (errno == 0 && pv_l > 0 && pv_l < 65536)
         {
-            u->port = pv;
+            u->port = (int)pv_l;
         }
     }
 
@@ -167,7 +168,6 @@ int http_set_source_ip(const char* ip)
     return 0;
 }
 
-const char* http_source_ip(void) { return g_src_ip; }
 
 #ifndef _WIN32
 #define DNS_TIMEOUT_MS 1500 /* 单次域名解析上限；超时视为解析失败 */
@@ -524,7 +524,7 @@ static ssize_t read_headers(sock_t fd, char* buf, size_t cap, long deadline, siz
         size_t start = scanned > 3 ? scanned - 3 : 0;
         for (size_t i = start; i + 4 <= n; i++)
         {
-            if (memcmp(buf + i, "\r\n\r\n", 4) == 0)
+            if (strncmp(buf + i, "\r\n\r\n", 4) == 0)
             {
                 *hdr_end = i + 4;
                 return (ssize_t)n;
@@ -572,7 +572,9 @@ static int hdr_get(const char* hdr, const char* name, char* out, size_t outsz)
             size_t i = 0;
             while (v < e2 && i + 1 < outsz)
             {
-                out[i++] = *v++;
+                out[i] = *v;
+        i++;
+        v++;
             }
             out[i] = 0;
             return 1;
@@ -585,7 +587,17 @@ static int hdr_get(const char* hdr, const char* name, char* out, size_t outsz)
 static int parse_status(const char* hdr)
 {
     const char* sp = strchr(hdr, ' ');
-    return sp ? (int)strtol(sp + 1, NULL, 10) : -1;
+    if (sp == NULL)
+    {
+        return -1;
+    }
+    errno = 0;
+    long code = strtol(sp + 1, NULL, 10);
+    if (errno != 0 || code < 100 || code > 599)
+    {
+        return -1;
+    }
+    return (int)code;
 }
 
 /*
@@ -670,9 +682,10 @@ static int dechunk(const char* in, size_t inlen, http_buf* out)
     {
         long sz = 0;
         int digits = 0;
-        for (; i < inlen;)
+        while (i < inlen)
         {
-            char c = in[i++];
+            char c = in[i];
+        i++;
             if (c == '\r')
             {
                 continue;
@@ -735,7 +748,7 @@ static int dechunk(const char* in, size_t inlen, http_buf* out)
 /* ---------------------------------------------------------------- 主流程 */
 
 static long http_do(const char* url, const char* post, const char* referer,
-                    unsigned flags, long timeout_s, http_buf* out,
+                    unsigned flags, long timeout_s_arg, http_buf* out,
                     char* loc_out, size_t loc_outsz)
 {
     static int sigpipe_done;
@@ -752,9 +765,10 @@ static long http_do(const char* url, const char* post, const char* referer,
         sigpipe_done = 1;
     }
 
-    if (timeout_s <= 0)
+    long tout = timeout_s_arg;
+    if (tout <= 0)
     {
-        timeout_s = HTTP_TIMEOUT_S;
+        tout = HTTP_TIMEOUT_S;
     }
 
     char cur[1024];
@@ -776,9 +790,9 @@ static long http_do(const char* url, const char* post, const char* referer,
         }
 
         long t0 = log_tick_ms();
-        long deadline = t0 + timeout_s * 1000;
+        long deadline = t0 + tout * 1000;
 
-        sock_t fd = connect_timeout(u.host, u.port, (long)HTTP_CONNECT_TIMEOUT_S * 1000);
+        sock_t fd = connect_timeout(u.host, u.port, HTTP_CONNECT_TIMEOUT_MS);
         if (fd == SOCK_INVALID)
         {
             LOG_DEBUG("[http] %s %s:%d -> 连接失败, %ld ms",
@@ -839,8 +853,10 @@ static long http_do(const char* url, const char* post, const char* referer,
         }
         /* 注意别用 %zu：mingw 下这处直接调 snprintf 走 MSVCRT，%zu 未定义，
          * Content-Length 会打错（LOG_* 宏走 __mingw_vfprintf 才支持 %zu）。 */
-        req[rn++] = '\r';
-        req[rn++] = '\n';
+        req[rn] = '\r';
+        rn++;
+        req[rn] = '\n';
+        rn++;
         if (pn)
         {
             (void)memcpy(req + rn, post, pn);
@@ -920,7 +936,12 @@ static long http_do(const char* url, const char* post, const char* referer,
             long clen = -1;
             if (!strstr(te, "chunked") && clbuf[0])
             {
-                clen = strtol(clbuf, NULL, 10);
+                errno = 0;
+                long parsed = strtol(clbuf, NULL, 10);
+                if (errno == 0 && parsed >= 0)
+                {
+                    clen = parsed;
+                }
             }
 
             http_buf raw = {0};
@@ -935,6 +956,10 @@ static long http_do(const char* url, const char* post, const char* referer,
                 else if (raw.len)
                 {
                     okb = buf_append(out, raw.data, raw.len);
+                }
+                else
+                {
+                    /* 空响应体（无 Content-Length 且非 chunked）：合法 */
                 }
             }
             if (!okb)
@@ -1002,7 +1027,6 @@ long http_req_location(const char* url, char* loc, size_t locsz)
 
 /* ---------------------------------------------------------------- 并行在线探测 */
 
-static const char* PROBE_204[] = {PROBE_204_LIST};
 #define PROBE_MAX 16
 
 /*
@@ -1027,7 +1051,7 @@ typedef struct
     size_t buflen;
 } probe_t;
 
-static probe_t g_probe[PROBE_MAX];   /* 文件域：非重入；CLI 单线程，够用 */
+static probe_t g_probes[PROBE_MAX];   /* 文件域：非重入；CLI 单线程，够用 */
 
 /* 发起非阻塞 connect（不等待结果），DNS 失败返回 SOCK_INVALID */
 static sock_t connect_start(const char* host, int port)
@@ -1187,6 +1211,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
         sigpipe_done = 1;
     }
 
+    static const char* PROBE_204[] = {PROBE_204_LIST}; /* 8.9: 仅本函数使用 */
     size_t n = sizeof PROBE_204 / sizeof *PROBE_204;
     if (n > PROBE_MAX)
     {
@@ -1199,7 +1224,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
     size_t pending = 0;
     for (size_t i = 0; i < n; i++)
     {
-        probe_t* p = &g_probe[i];
+        probe_t* p = &g_probes[i];
         (void)memset(p, 0, sizeof *p);
         p->fd = SOCK_INVALID;
         url_t u;
@@ -1250,7 +1275,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
      * 退出条件从"204 命中"扩为"204 命中且附加探测已定论"——两个结果
      * 调用方（cmd_status）都要；204 命中后其余 204 连接直接放弃，
      * 只为等附加探测定论收尾。 */
-#define EXTRA_IDX PROBE_MAX
+    enum { EXTRA_IDX_VAL = PROBE_MAX }; /* 附加探测在 idx[] 中的哨兵下标 */
     int hit = 0;
     while (pending && !(hit && extra_done))
     {
@@ -1265,10 +1290,10 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
             /* 204 已命中：放弃其余 204 连接，poll 列表只剩附加探测 */
             for (size_t i = 0; i < n; i++)
             {
-                if (g_probe[i].fd != SOCK_INVALID)
+                if (g_probes[i].fd != SOCK_INVALID)
                 {
-                    (void)sock_close(g_probe[i].fd);
-                    g_probe[i].fd = SOCK_INVALID;
+                    (void)sock_close(g_probes[i].fd);
+                    g_probes[i].fd = SOCK_INVALID;
                     pending--;
                 }
             }
@@ -1279,7 +1304,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
     size_t m = 0;
         for (size_t i = 0; i < n; i++)
         {
-            probe_t* p = &g_probe[i];
+            probe_t* p = &g_probes[i];
             if (p->fd == SOCK_INVALID || p->phase == 3)
             {
                 continue;
@@ -1294,7 +1319,8 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
             pfds[m].fd = (int)extra_fd;
             pfds[m].events = POLLOUT;
             pfds[m].revents = 0;
-            idx[m++] = EXTRA_IDX;
+            idx[m] = EXTRA_IDX_VAL;
+            m++;
         }
         if (!m)
         {
@@ -1313,7 +1339,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
             {
                 continue;
             }
-            if (idx[k] == EXTRA_IDX)
+            if (idx[k] == EXTRA_IDX_VAL)
             {
                 /* portal 可达性：POLLOUT/POLLERR 后以 SO_ERROR 定论 */
                 extra_ok = (sock_take_error(extra_fd) == 0);
@@ -1323,7 +1349,7 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
                 pending--;
                 continue;
             }
-            probe_t* p = &g_probe[idx[k]];
+            probe_t* p = &g_probes[idx[k]];
             probe_step(p, &hit);
             if (p->phase == 3 && p->fd != SOCK_INVALID)
             {
@@ -1337,15 +1363,14 @@ int is_online_ex(const char* extra_host, int extra_port, int* extra_reachable)
             }
         }
     }
-#undef EXTRA_IDX
 
     /* 3) 收尾：关掉所有还开着的 fd */
     for (size_t i = 0; i < n; i++)
     {
-        if (g_probe[i].fd != SOCK_INVALID)
+        if (g_probes[i].fd != SOCK_INVALID)
         {
-            (void)sock_close(g_probe[i].fd);
-            g_probe[i].fd = SOCK_INVALID;
+            (void)sock_close(g_probes[i].fd);
+            g_probes[i].fd = SOCK_INVALID;
         }
     }
     if (extra_fd != SOCK_INVALID)

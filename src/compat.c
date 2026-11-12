@@ -6,6 +6,10 @@
 #define _POSIX_C_SOURCE 200809L /* NOLINT(bugprone-reserved-identifier) POSIX 标准特性测试宏（fcntl / clock_gettime / nanosleep / localtime_r） */
 
 #include "compat.h"
+
+static int compat_exe_dir(char* out, size_t n); /* 8.7: 仅本模块使用 */
+
+static int compat_exe_dir(char* out, size_t n); /* 8.7: 仅本模块使用 */
 #include "config.h" /* POSIX 默认配置/状态路径宏 */
 
 #ifdef _WIN32
@@ -72,28 +76,6 @@ void compat_console_utf8(void)
     SetConsoleCP(CP_UTF8);
 }
 
-int compat_exe_dir(char* out, size_t n)
-{
-    wchar_t wpath[600];
-    DWORD len = GetModuleFileNameW(NULL, wpath, (DWORD)(sizeof wpath / sizeof *wpath));
-    if (len == 0 || len >= sizeof wpath / sizeof *wpath)
-    {
-        return 0;
-    }
-    /* 程序内字符串统一 UTF-8；W 版 API + 显式转换保证中文/空格路径安全 */
-    int need = WideCharToMultiByte(CP_UTF8, 0, wpath, -1, out, (int)n, NULL, NULL);
-    if (need <= 0 || (size_t)need > n)
-    {
-        return 0;
-    }
-    char* slash = strrchr(out, '\\');
-    if (!slash)
-    {
-        return 0;
-    }
-    *slash = 0;
-    return out[0] ? 1 : 0;
-}
 
 int compat_default_config(char* out, size_t n)
 {
@@ -189,6 +171,8 @@ void compat_echo(int on)
     (void)tcsetattr(0, TCSANOW, &t);
 }
 
+static int g_lock_fd = -1; /* 会话锁 fd 单元；句柄 = 指向它的不透明指针 */
+
 void* compat_lock_file(const char* path)
 {
     int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
@@ -201,14 +185,16 @@ void* compat_lock_file(const char* path)
         (void)close(fd);
         return NULL;
     }
-    return (void*)(intptr_t)fd;
+    g_lock_fd = fd;
+    return &g_lock_fd;
 }
 
 void compat_unlock_file(void* h)
 {
-    if (h)
+    if (h == &g_lock_fd && g_lock_fd >= 0)
     {
-        (void)close((int)(intptr_t)h);
+        (void)close(g_lock_fd);
+        g_lock_fd = -1;
     }
 }
 
@@ -262,7 +248,7 @@ int compat_mkdir(const char* path) { return mkdir(path, S_IRWXU); }
 
 void compat_console_utf8(void) { /* POSIX 终端本就是 UTF-8，无需处理 */ }
 
-int compat_exe_dir(char* out, size_t n)
+static int compat_exe_dir(char* out, size_t n)
 {
     ssize_t len = readlink("/proc/self/exe", out, n - 1);
     if (len <= 0)

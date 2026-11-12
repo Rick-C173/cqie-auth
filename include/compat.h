@@ -94,7 +94,6 @@ void compat_console_utf8(void);
  * Windows 用 GetModuleFileNameW（UTF-8 输出，中文路径安全）；
  * POSIX 用 readlink("/proc/self/exe")。失败返回 0。
  */
-int compat_exe_dir(char* out, size_t n);
 
 /*
  * 默认配置文件路径：Windows = <exe目录>\cqie-auth.conf（便携布局，
