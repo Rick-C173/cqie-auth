@@ -1,0 +1,53 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: Latest
+
+# ===== 缩进 / 大括号 / 列宽 =====
+# 项目风格：Allman（函数与控制块大括号一律独占一行）、4 空格、无 tab。
+# 列宽 100：现有代码主体行宽；长字符串字面量（usage 文案、表单拼接）不拆分。
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+BreakBeforeBraces: Allman
+IndentCaseLabels: true              # switch 的 case 缩进一层（log.c level_name 风格）
+AllowShortIfStatementsOnASingleLine: WithoutElse   # 保留个别"if (!cmd) cmd = a;"单行写法
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+BreakStringLiterals: false          # 不拆长字符串字面量
+
+# ===== 指针与类型 =====
+# 项目一致写法：星号贴类型（char* p、const char* val、FILE* in）
+PointerAlignment: Left
+DerivePointerAlignment: false
+SpaceAfterCStyleCast: false         # (size_t)r
+
+# ===== 空格 =====
+SpaceBeforeParens: ControlStatements   # if (...)，函数调用不空格
+SpacesBeforeTrailingComments: 1
+
+# ===== 对齐 =====
+# 赋值/声明不做强制对齐（避免全量 reformat 产生大 diff）；
+# #define 常量块的值对齐保留（config.h 的 USER_ID/PASSWORD 风格）。
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignConsecutiveMacros: Consecutive
+
+# ===== 参数换行 =====
+# 多行参数尽量对齐开括号，装不下则逐行（BinPack）——与现有调用点一致。
+AlignAfterOpenBracket: Align
+BinPackParameters: true
+BinPackArguments: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# ===== include =====
+# 保持手写顺序（项目头在前、语义相关），格式化不重排、不合并块。
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# ===== 空行 =====
+MaxEmptyLinesToKeep: 2
